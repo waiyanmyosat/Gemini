@@ -1,11 +1,32 @@
-<div align="center">
+# Gemini Native Android Wrapper
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+A native Kotlin Android application that wraps `Gemini.google.com` with official branding and modern Android practices.
 
-  <h1>Built with AI Studio</h2>
+## Features
+- **Android 16 Support**: Targeting API 36 (Baklava).
+- **Architecture**: Optimized for `arm64-v8a`.
+- **WebView Integration**: High-performance WebView with JS and DOM storage enabled.
+- **CI/CD**: Ready-to-use GitHub Actions workflow for automated APK generation.
+- **Official Branding**: Uses Gemini-inspired colors and icons.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## Project Structure
+- `app/`: Main Android module.
+- `.github/workflows/`: CI/CD configuration.
+- `gradle/`: Gradle wrapper and configuration.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## How to Build
+1. **Local Build**:
+   - Open the project in Android Studio.
+   - Run `./gradlew assembleDebug` to generate a debug APK.
+2. **GitHub Actions**:
+   - Push this repository to GitHub.
+   - Go to the **Actions** tab to see the build progress.
+   - Once finished, download the APK from the **Artifacts** section of the build summary.
 
-</div>
+## Configuration
+- **Package Name**: `com.gemini.ai`
+- **Minimum SDK**: 26 (Android 8.0)
+- **Target SDK**: 36 (Android 16)
+
+## License
+Apache-2.0
