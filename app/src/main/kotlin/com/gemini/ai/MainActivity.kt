@@ -126,9 +126,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         webView?.apply {
-            load(null as String?) // Clear
+            stopLoading()
+            loadUrl("about:blank")
             destroy()
         }
+        webView = null
         super.onDestroy()
     }
 }
