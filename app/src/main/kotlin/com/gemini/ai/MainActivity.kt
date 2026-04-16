@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.os.Bundle
 import android.view.KeyEvent
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
@@ -33,6 +34,16 @@ class MainActivity : AppCompatActivity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
+            
+            // Performance & Caching Optimizations
+            cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK // Use cache for instant launch
+            
+            // Rendering & Speed
+            setRenderPriority(WebSettings.RenderPriority.HIGH)
+            javaScriptCanOpenWindowsAutomatically = true
+            mediaPlaybackRequiresUserGesture = false
+            
+            // Layout & Zoom
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
