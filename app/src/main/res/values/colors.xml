@@ -2,4 +2,8 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="gemini_blue">#4285F4</color>
+    
+    <!-- Launcher Theme Colors (Light Mode) -->
+    <color name="launcher_background">#FFFFFF</color>
+    <color name="launcher_foreground">#000000</color>
 </resources>
