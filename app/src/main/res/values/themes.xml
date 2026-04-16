@@ -2,5 +2,7 @@
     <style name="Theme.GeminiNative" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/gemini_blue</item>
         <item name="android:statusBarColor">@color/black</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
     </style>
 </resources>
