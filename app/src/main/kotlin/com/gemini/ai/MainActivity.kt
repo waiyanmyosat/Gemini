@@ -77,6 +77,9 @@ class MainActivity : ComponentActivity() {
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
                         
+                        // Force Hardware Acceleration for extreme speed
+                        setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+                        
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
