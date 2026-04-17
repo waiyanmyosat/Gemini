@@ -76,41 +76,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun triggerPhysicalDownload() {
-        val displayMetrics = resources.displayMetrics
-        val widthPixels = displayMetrics.widthPixels
-        val heightPixels = displayMetrics.heightPixels
+        Toast.makeText(this, "Capturing HTML+CSS+JS (3s delay for settling)...", Toast.LENGTH_SHORT).show()
         
-        Toast.makeText(this, "Simulating Hardware: ${android.os.Build.MODEL} (${widthPixels}x${heightPixels})...", Toast.LENGTH_SHORT).show()
+        // Force a layout pass
+        webViewLive.evaluateJavascript("window.dispatchEvent(new Event('resize'));", null)
         
-        /**
-         * Dynamic Capture Protocol:
-         * 1. Detects Real Hardware Resolution
-         * 2. Forces Page Layout to match exact pixels
-         */
-        val perfectCaptureScript = """
-            (function() {
-                const meta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
-                meta.name = 'viewport';
-                meta.content = 'width=' + screen.width + ', initial-scale=1, maximum-scale=1, user-scalable=no';
-                if (!meta.parentNode) document.head.appendChild(meta);
-                
-                window.dispatchEvent(new Event('resize'));
-                return document.readyState === 'complete';
-            })();
-        """.trimIndent()
-        
-        webViewLive.evaluateJavascript(perfectCaptureScript) { ready ->
-            Handler(Looper.getMainLooper()).postDelayed({
-                webViewLive.saveWebArchive(archiveFile.absolutePath, false) { path ->
-                    if (path != null) {
-                        isCacheSeeded = true
-                        getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE).edit().putBoolean("cache_seeded", true).apply()
-                        verifyButton?.visibility = View.GONE
-                        Toast.makeText(this@MainActivity, "SUCCESS: Perfect hardware-matched copy saved.", Toast.LENGTH_LONG).show()
-                    }
+        // Wait 3 seconds for UI to settle (as requested in FIXED UI logic)
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!archiveFile.parentFile!!.exists()) archiveFile.parentFile!!.mkdirs()
+            
+            webViewLive.saveWebArchive(archiveFile.absolutePath, false) { path ->
+                if (path != null) {
+                    isCacheSeeded = true
+                    getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE).edit().putBoolean("cache_seeded", true).apply()
+                    verifyButton?.visibility = View.GONE
+                    Toast.makeText(this@MainActivity, "OFFLINE SUCCESS: Every UI piece captured.", Toast.LENGTH_LONG).show()
                 }
-            }, 800) 
-        }
+            }
+        }, 3000)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -121,40 +104,15 @@ class MainActivity : AppCompatActivity() {
         val rootLayout = FrameLayout(this)
         setContentView(rootLayout)
 
-        // 1. COMPACT MODE: Restore immersive view
+        // 1. COMPACT MODE: Original hidden status bar method
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val windowInsetsController = WindowInsetsControllerCompat(window, rootLayout)
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
         windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-        // 2. ROBUST KEYBOARD HANDLING: Dynamic Layout Margins
-        rootLayout.viewTreeObserver.addOnGlobalLayoutListener {
-            val r = android.graphics.Rect()
-            rootLayout.getWindowVisibleDisplayFrame(r)
-            val screenHeight = rootLayout.rootView.height
-            val keypadHeight = screenHeight - r.bottom
-            
-            // If keypad height is > 15% of screen, it's likely open
-            val margin = if (keypadHeight > screenHeight * 0.15) keypadHeight else 0
-            
-            // Adjust margins for both views to push input above keyboard
-            (webViewLive.layoutParams as? FrameLayout.LayoutParams)?.let {
-                if (it.bottomMargin != margin) {
-                    it.bottomMargin = margin
-                    webViewLive.layoutParams = it
-                }
-            }
-            webViewOffline?.let { offline ->
-                (offline.layoutParams as? FrameLayout.LayoutParams)?.let {
-                    if (it.bottomMargin != margin) {
-                        it.bottomMargin = margin
-                        offline.layoutParams = it
-                    }
-                }
-            }
-        }
-
-        archiveFile = File(filesDir, "gemini_static_v1.mht")
+        val folder = File(filesDir, "saved_pages")
+        if (!folder.exists()) folder.mkdirs()
+        archiveFile = File(folder, "gemini_static_v1.mht")
         val prefs = getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
         isCacheSeeded = prefs.getBoolean("cache_seeded", false)
 
@@ -206,32 +164,17 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = true
             allowFileAccessFromFileURLs = true
             allowUniversalAccessFromFileURLs = true
-            setSupportZoom(false)
+            setSupportZoom(true)
             builtInZoomControls = false
             displayZoomControls = false
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            // Use dynamic User Agent from device
-            userAgentString = userAgentString.replace("Version/4.0 ", "") 
+            userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36"
         }
         
         wv.addJavascriptInterface(WebAppInterface(this), "Android")
         wv.webChromeClient = WebChromeClient()
         
         wv.webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-                // Dynamically sync viewport to current device hardware
-                val viewportScript = """
-                    (function() {
-                        const meta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
-                        meta.name = 'viewport';
-                        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-                        if (!meta.parentNode) document.head.appendChild(meta);
-                    })();
-                """.trimIndent()
-                view?.evaluateJavascript(viewportScript, null)
-            }
-
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
 
