@@ -20,6 +20,7 @@ import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import java.io.File
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -28,6 +29,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private lateinit var archiveFile: File
     private var isCacheSeeded: Boolean = false
 
     // Bridge for JS to notify Android of prompt sending
@@ -35,17 +37,19 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun onSendPrompt() {
             mainActivity.runOnUiThread {
-                mainActivity.enableNetworkForSession()
+                mainActivity.enableNetworkAndReload()
             }
         }
     }
 
     /**
-     * Enables network access permanently for the current session 
-     * after the user sends the first prompt.
+     * When user sends a prompt from the static offline file,
+     * we "Wake Up" the real internet-connected site.
      */
-    fun enableNetworkForSession() {
+    fun enableNetworkAndReload() {
         webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
+        // Switch from the local .mht file back to the live site
+        webView.loadUrl("https://gemini.google.com/app")
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -63,6 +67,9 @@ class MainActivity : AppCompatActivity() {
         rootLayout.addView(webView)
         
         setContentView(rootLayout)
+
+        // Physical File Path for valid "Proof" of download
+        archiveFile = File(filesDir, "gemini_static_v1.mht")
 
         // Load seeding state
         val prefs = getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
@@ -101,12 +108,11 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             
             // 100% OFFLINE FIRST:
-            // If we have already "Seeded/Downloaded" the site in the first session,
-            // we strictly use the cache to avoid ERR_CACHE_MISS and dynamic changes.
-            if (isCacheSeeded) {
+            // If the local archive exists, we will load it directly.
+            if (archiveFile.exists()) {
                 cacheMode = WebSettings.LOAD_CACHE_ONLY
             } else {
-                // First session: download and seed the cache
+                // Initial session: allow internet to reach login/app
                 cacheMode = WebSettings.LOAD_DEFAULT
             }
             
@@ -124,22 +130,26 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
 
-                // EXPLICIT LOGGED-IN CHECK: Verify we are on the actual /app dashboard
-                // This ensures we don't lock into offline mode while still on the login screen.
+                // EXPLICIT LOGGED-IN CHECK: Trigger download only on Gemini dashboard
                 if (!isCacheSeeded && url != null && url.contains("gemini.google.com/app")) {
-                    // Give it a tiny moment to ensure JS rendering is complete
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        isCacheSeeded = true
-                        getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
-                            .edit()
-                            .putBoolean("cache_seeded", true)
-                            .apply()
-                        
-                        Toast.makeText(this@MainActivity, "Login Confirmed: Downloaded 100% Offline Page", Toast.LENGTH_LONG).show()
-                        
-                        // PERMANENT LOCK: Forbidden to touch internet on next launch
-                        view?.settings?.cacheMode = WebSettings.LOAD_CACHE_ONLY
-                    }, 2000) // 2 second delay to ensure the dashboard elements are fully "downloaded"
+                    // Start manual Archive download
+                    view?.saveWebArchive(archiveFile.absolutePath, false) { path ->
+                        if (path != null) {
+                            isCacheSeeded = true
+                            getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
+                                .edit()
+                                .putBoolean("cache_seeded", true)
+                                .apply()
+                            
+                            val sizeKb = archiveFile.length() / 1024
+                            Toast.makeText(this@MainActivity, 
+                                "SUCCESS: Stored Website to Storage ($sizeKb KB).\nReloading in Local Mode...", 
+                                Toast.LENGTH_LONG).show()
+                            
+                            // Immediately switch to the local file
+                            view.loadUrl("file://" + archiveFile.absolutePath)
+                        }
+                    }
                 }
                 
                 // Inject reliable prompt detection
@@ -204,7 +214,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (savedInstanceState == null) {
-            webView.loadUrl("https://gemini.google.com/app")
+            if (archiveFile.exists()) {
+                // PROOF: Loading 100% local physical file
+                webView.loadUrl("file://" + archiveFile.absolutePath)
+            } else {
+                webView.loadUrl("https://gemini.google.com/app")
+            }
         }
     }
 
