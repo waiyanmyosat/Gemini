@@ -48,7 +48,8 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun onDashboardReady() {
-            mainActivity.runOnUiThread { mainActivity.triggerInstantSwap() }
+            // Automatic swap disabled to respect "Offline First" preference.
+            // Only swap when a prompt is sent or explicitly requested.
         }
     }
 
@@ -76,14 +77,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun triggerPhysicalDownload() {
-        Toast.makeText(this, "Freezing current dashboard...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Capturing every UI piece (HTML+CSS+JS)...", Toast.LENGTH_SHORT).show()
         
-        webViewLive.saveWebArchive(archiveFile.absolutePath, false) { path ->
-            if (path != null) {
-                isCacheSeeded = true
-                getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE).edit().putBoolean("cache_seeded", true).apply()
-                verifyButton?.visibility = View.GONE
-                Toast.makeText(this@MainActivity, "SUCCESS: Dashboard Frozen Offline.", Toast.LENGTH_LONG).show()
+        // Before capturing, ensure we force a layout pass for dynamic elements
+        val prepareScript = "window.dispatchEvent(new Event('resize'));"
+        
+        webViewLive.evaluateJavascript(prepareScript) {
+            webViewLive.saveWebArchive(archiveFile.absolutePath, false) { path ->
+                if (path != null) {
+                    isCacheSeeded = true
+                    getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE).edit().putBoolean("cache_seeded", true).apply()
+                    verifyButton?.visibility = View.GONE
+                    Toast.makeText(this@MainActivity, "OFFLINE SUCCESS: Dash Frozen Locally.", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -93,6 +99,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         
         val rootLayout = FrameLayout(this)
+        
+        // 1. COMPACT MODE: Hide system bars for an immersive feel
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val windowInsetsController = WindowInsetsControllerCompat(window, rootLayout)
+        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+        windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
         archiveFile = File(filesDir, "gemini_static_v1.mht")
         val prefs = getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
         isCacheSeeded = prefs.getBoolean("cache_seeded", false)
@@ -118,7 +131,7 @@ class MainActivity : AppCompatActivity() {
         // 3. Add Freeze Button
         if (!isCacheSeeded && !archiveFile.exists()) {
             verifyButton = Button(this).apply {
-                text = "FREEZE THIS VIEW FOR OFFLINE USE"
+                text = "FREEZE UI (OFFLINE MODE)"
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
                     gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
                     setMargins(0, 0, 0, 100)
@@ -148,6 +161,9 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = true
             allowFileAccessFromFileURLs = true
             allowUniversalAccessFromFileURLs = true
+            setSupportZoom(false)
+            builtInZoomControls = false
+            displayZoomControls = false
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
         }
@@ -176,9 +192,17 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                if (request?.isForMainFrame == true && view == webViewLive) {
-                    // If live fails, allow it to try again or stay on the offline view
-                    view.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                if (request?.isForMainFrame == true) {
+                    if (view == webViewLive) {
+                        // Background live failed? Stealthily keep it updated with cache
+                        view.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                    } else if (view == webViewOffline) {
+                        // Offline file critical error (rare) -> Fallback to live immediately
+                        mainActivity.runOnUiThread {
+                            webViewLive.alpha = 1.0f
+                            webViewOffline?.visibility = View.GONE
+                        }
+                    }
                 }
             }
 
