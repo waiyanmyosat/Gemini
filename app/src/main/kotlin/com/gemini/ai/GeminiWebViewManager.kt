@@ -69,7 +69,7 @@ object GeminiWebViewManager {
             
             // Resource Loading
             cacheMode = WebSettings.LOAD_DEFAULT
-            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW // Forced for security/login stability
+            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_ALWAYS
             
             // Speed up rendering
             loadsImagesAutomatically = true

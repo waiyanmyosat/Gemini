@@ -161,12 +161,15 @@ class MainActivity : AppCompatActivity() {
                                  host.contains("googleusercontent.com") ||
                                  host.contains("googleapis.com") ||
                                  host.contains("google.com") ||
+                                 host.contains("googleusercontent") ||
                                  host.startsWith("accounts.") ||
+                                 url.contains("accounts.google") ||
                                  url.contains("SetSID") ||
                                  url.contains("signin") ||
                                  url.contains("ServiceLogin") ||
                                  url.contains("/auth") ||
-                                 url.contains("google.com/accounts")
+                                 url.contains("google.com/accounts") ||
+                                 url.contains("github.com") // Extra safety for GitHub login if requested
 
                 if (isInternal) return false 
                 
