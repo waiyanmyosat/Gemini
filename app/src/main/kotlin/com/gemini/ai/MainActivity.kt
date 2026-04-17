@@ -76,19 +76,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun triggerPhysicalDownload() {
-        Toast.makeText(this, "Simulating Redmi Note 14 Pro+ (1220x2712)...", Toast.LENGTH_SHORT).show()
+        val displayMetrics = resources.displayMetrics
+        val widthPixels = displayMetrics.widthPixels
+        val heightPixels = displayMetrics.heightPixels
+        
+        Toast.makeText(this, "Simulating Hardware: ${android.os.Build.MODEL} (${widthPixels}x${heightPixels})...", Toast.LENGTH_SHORT).show()
         
         /**
-         * Enhanced Capture Protocol (Device: Redmi Note 14 Pro+):
-         * 1. Target Resolution: 1220 (W) x 2712 (H)
-         * 2. Force high-density metadata sync
+         * Dynamic Capture Protocol:
+         * 1. Detects Real Hardware Resolution
+         * 2. Forces Page Layout to match exact pixels
          */
         val perfectCaptureScript = """
             (function() {
-                // Simulate Redmi Note 14 Pro+ Viewport for layout engine
                 const meta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
                 meta.name = 'viewport';
-                meta.content = 'width=1220, initial-scale=1, maximum-scale=1, user-scalable=no';
+                meta.content = 'width=' + screen.width + ', initial-scale=1, maximum-scale=1, user-scalable=no';
                 if (!meta.parentNode) document.head.appendChild(meta);
                 
                 window.dispatchEvent(new Event('resize'));
@@ -103,10 +106,10 @@ class MainActivity : AppCompatActivity() {
                         isCacheSeeded = true
                         getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE).edit().putBoolean("cache_seeded", true).apply()
                         verifyButton?.visibility = View.GONE
-                        Toast.makeText(this@MainActivity, "SUCCESS: Perfect 1220x2712 Copy Saved.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, "SUCCESS: Perfect hardware-matched copy saved.", Toast.LENGTH_LONG).show()
                     }
                 }
-            }, 800) // Slightly longer delay for high-density layout shift
+            }, 800) 
         }
     }
 
@@ -207,13 +210,28 @@ class MainActivity : AppCompatActivity() {
             builtInZoomControls = false
             displayZoomControls = false
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = "Mozilla/5.0 (Linux; Android 14; 24090RA29C) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+            // Use dynamic User Agent from device
+            userAgentString = userAgentString.replace("Version/4.0 ", "") 
         }
         
         wv.addJavascriptInterface(WebAppInterface(this), "Android")
         wv.webChromeClient = WebChromeClient()
         
         wv.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                // Dynamically sync viewport to current device hardware
+                val viewportScript = """
+                    (function() {
+                        const meta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
+                        meta.name = 'viewport';
+                        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+                        if (!meta.parentNode) document.head.appendChild(meta);
+                    })();
+                """.trimIndent()
+                view?.evaluateJavascript(viewportScript, null)
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
 
