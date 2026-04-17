@@ -73,75 +73,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * NATIVE PROOF PROTOCOL:
-     * This uses the official Google Credential Manager to verify your identity.
-     * Only after this returns a valid ID Token do we trigger the 100% Download.
+     * MANUAL DOWNLOAD PROTOCOL:
+     * This triggers whenever the user clicks the native button.
+     * It captures exactly what is currently visible in the WebView.
      */
-    private fun performVerificationAndDownload() {
-        lifecycleScope.launch {
-            val credentialManager = CredentialManager.create(this@MainActivity)
-
-            val googleIdOption = GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(false) 
-                .setServerClientId(GOOGLE_WEB_CLIENT_ID) 
-                .setAutoSelectEnabled(true) 
-                .build()
-
-            val request = GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
-                .build()
-
-            try {
-                val result = credentialManager.getCredential(this@MainActivity, request)
-                val credential = result.credential
-
-                if (credential is CustomCredential && 
-                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-                    
-                    val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                    val email = googleIdTokenCredential.id
-                    
-                    // 100% PROOF OF SUCCESS REACHED
-                    Toast.makeText(this@MainActivity, "AUTHENTICATED: $email", Toast.LENGTH_SHORT).show()
-                    
-                    // CRITICAL: TRIGGER SITE DOWNLOAD NOW
-                    triggerPhysicalDownload()
-                }
-            } catch (e: Exception) {
-                // Precise error handling using standard practice
-                Toast.makeText(this@MainActivity, "Verification failed: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
     private fun triggerPhysicalDownload() {
-        // Ensure webview is on the dashboard
-        if (webView.url?.contains("/app") != true) {
-            webView.loadUrl("https://gemini.google.com/app")
-        }
+        Toast.makeText(this, "Downloading current view... Please wait.", Toast.LENGTH_SHORT).show()
         
-        Toast.makeText(this, "Capturing authenticated dashboard...", Toast.LENGTH_SHORT).show()
-        
-        // Wait for components to be in place
-        Handler(Looper.getMainLooper()).postDelayed({
-            webView.saveWebArchive(archiveFile.absolutePath, false) { path ->
-                if (path != null) {
-                    isCacheSeeded = true
-                    getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
-                        .edit()
-                        .putBoolean("cache_seeded", true)
-                        .apply()
-                    
-                    verifyButton?.visibility = View.GONE
-                    
-                    Toast.makeText(this@MainActivity, "SUCCESS: Website Frozen Offline.", Toast.LENGTH_LONG).show()
-                    
-                    // LOCK TO LOCAL
-                    webView.loadUrl("file://" + archiveFile.absolutePath)
-                    webView.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
-                }
+        webView.saveWebArchive(archiveFile.absolutePath, false) { path ->
+            if (path != null) {
+                isCacheSeeded = true
+                getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("cache_seeded", true)
+                    .apply()
+                
+                // Hide the button after a successful capture
+                verifyButton?.visibility = View.GONE
+                
+                Toast.makeText(this@MainActivity, "SUCCESS: Site Frozen into Physical Memory.", Toast.LENGTH_LONG).show()
+                
+                // PERMANENT LOCK: Switch to the local file URL immediately
+                webView.loadUrl("file://" + archiveFile.absolutePath)
+                webView.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
+            } else {
+                Toast.makeText(this@MainActivity, "Error: Storage is full or not accessible.", Toast.LENGTH_LONG).show()
             }
-        }, 5000)
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -150,6 +108,11 @@ class MainActivity : AppCompatActivity() {
         
         val rootLayout = FrameLayout(this)
         
+        // 1. SETUP PATHS AND STATE FIRST
+        archiveFile = File(filesDir, "gemini_static_v1.mht")
+        val prefs = getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
+        isCacheSeeded = prefs.getBoolean("cache_seeded", false)
+
         webView = WebView(this)
         webView.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -158,10 +121,10 @@ class MainActivity : AppCompatActivity() {
         webView.visibility = View.VISIBLE 
         rootLayout.addView(webView)
         
-        // Add Native Verification Button if not seeded
-        if (!isCacheSeeded) {
+        // 2. Add Native Verification Button ONLY if no local version exists
+        if (!isCacheSeeded && !archiveFile.exists()) {
             val btn = Button(this).apply {
-                text = "VERIFY & DOWNLOAD OFFLINE SITE"
+                text = "FREEZE THIS VIEW FOR OFFLINE USE"
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.WRAP_CONTENT,
                     FrameLayout.LayoutParams.WRAP_CONTENT
@@ -169,20 +132,13 @@ class MainActivity : AppCompatActivity() {
                     gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
                     setMargins(0, 0, 0, 100)
                 }
-                setOnClickListener { performVerificationAndDownload() }
+                setOnClickListener { triggerPhysicalDownload() }
             }
             verifyButton = btn
             rootLayout.addView(btn)
         }
         
         setContentView(rootLayout)
-
-        // Physical File Path for valid "Proof" of download
-        archiveFile = File(filesDir, "gemini_static_v1.mht")
-
-        // Load seeding state
-        val prefs = getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
-        isCacheSeeded = prefs.getBoolean("cache_seeded", false)
 
         // Persistence Configuration
         val cookieManager = CookieManager.getInstance()
