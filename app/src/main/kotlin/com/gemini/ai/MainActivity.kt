@@ -26,7 +26,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
-    private lateinit var splashOverlay: FrameLayout
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,31 +35,20 @@ class MainActivity : AppCompatActivity() {
         val rootLayout = FrameLayout(this)
         rootLayout.id = View.generateViewId()
         
-        // 1. WebView
+        // WebView - Immediate visibility for cached content
         webView = WebView(this)
         webView.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         )
-        // Hidden until page load starts to avoid flickering
-        webView.visibility = View.INVISIBLE 
+        webView.visibility = View.VISIBLE 
         rootLayout.addView(webView)
         
-        // 2. Splash Overlay (for "Instant" feel)
-        splashOverlay = FrameLayout(this)
-        splashOverlay.setBackgroundColor(android.graphics.Color.WHITE)
-        splashOverlay.layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        )
-        
-        rootLayout.addView(splashOverlay)
-        
-        // 3. Progress Bar (Subtle)
+        // Progress Bar (Subtle at the very top)
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
         progressBar.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
-            8
+            6
         )
         progressBar.progressDrawable.setTint(android.graphics.Color.parseColor("#4285F4"))
         rootLayout.addView(progressBar)
@@ -104,7 +92,7 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             loadWithOverviewMode = true
             
-            // Aggressive Caching for "Instant" feel
+            // "Offline First" - Achievement of 100% instant cached page
             cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
             allowFileAccess = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
@@ -115,23 +103,13 @@ class MainActivity : AppCompatActivity() {
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 progressBar.progress = newProgress
-                if (newProgress > 80) {
-                    webView.visibility = View.VISIBLE
-                    splashOverlay.visibility = View.GONE
-                }
-                progressBar.visibility = if (newProgress >= 95) View.GONE else View.VISIBLE
+                progressBar.visibility = if (newProgress >= 100) View.GONE else View.VISIBLE
             }
         }
 
         webView.webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                progressBar.visibility = View.VISIBLE
-            }
-
             override fun onPageFinished(view: WebView?, url: String?) {
                 progressBar.visibility = View.GONE
-                webView.visibility = View.VISIBLE
-                splashOverlay.visibility = View.GONE
                 CookieManager.getInstance().flush()
             }
 
@@ -139,21 +117,24 @@ class MainActivity : AppCompatActivity() {
                 val url = request?.url?.toString() ?: return false
                 val host = request.url.host ?: ""
 
-                // AGGRESSIVE INTERNAL CHECK: Keep everything Google Login or Gemini related inside
+                // EXTREMELY AGGRESSIVE INTERNAL CHECK: Catch every single redirect in the Google Auth flow
+                val isGoogleAuth = host.contains("accounts.google") || 
+                                   host.contains("myaccount.google") ||
+                                   host.contains("google.com/accounts") ||
+                                   host.contains("google.com/signin") ||
+                                   url.contains("ServiceLogin") ||
+                                   url.contains("InteractiveLogin") ||
+                                   url.contains("identifier") ||
+                                   url.contains("challenge") ||
+                                   url.contains("/auth") ||
+                                   url.contains("AccountChooser") ||
+                                   url.contains("CheckCookie") ||
+                                   url.contains("v3/signin") ||
+                                   url.contains("oauth")
+
                 val isInternal = host.contains("gemini.google.com") || 
-                                host.contains("accounts.google") || 
-                                host.contains("myaccount.google") ||
-                                (host.contains("google.com") && (
-                                    url.contains("signin") || 
-                                    url.contains("ServiceLogin") || 
-                                    url.contains("InteractiveLogin") || 
-                                    url.contains("identifier") || 
-                                    url.contains("challenge") ||
-                                    url.contains("/auth") ||
-                                    url.contains("/AccountChooser") ||
-                                    url.contains("/v3/signin")
-                                )) ||
-                                host.endsWith("googleusercontent.com")
+                                 isGoogleAuth ||
+                                 host.endsWith("googleusercontent.com")
 
                 if (isInternal) {
                     return false // Stay in app
