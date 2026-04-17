@@ -76,20 +76,37 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun triggerPhysicalDownload() {
-        Toast.makeText(this, "Capturing every UI piece (HTML+CSS+JS)...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Simulating Redmi Note 14 Pro+ (1220x2712)...", Toast.LENGTH_SHORT).show()
         
-        // Before capturing, ensure we force a layout pass for dynamic elements
-        val prepareScript = "window.dispatchEvent(new Event('resize'));"
+        /**
+         * Enhanced Capture Protocol (Device: Redmi Note 14 Pro+):
+         * 1. Target Resolution: 1220 (W) x 2712 (H)
+         * 2. Force high-density metadata sync
+         */
+        val perfectCaptureScript = """
+            (function() {
+                // Simulate Redmi Note 14 Pro+ Viewport for layout engine
+                const meta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
+                meta.name = 'viewport';
+                meta.content = 'width=1220, initial-scale=1, maximum-scale=1, user-scalable=no';
+                if (!meta.parentNode) document.head.appendChild(meta);
+                
+                window.dispatchEvent(new Event('resize'));
+                return document.readyState === 'complete';
+            })();
+        """.trimIndent()
         
-        webViewLive.evaluateJavascript(prepareScript) {
-            webViewLive.saveWebArchive(archiveFile.absolutePath, false) { path ->
-                if (path != null) {
-                    isCacheSeeded = true
-                    getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE).edit().putBoolean("cache_seeded", true).apply()
-                    verifyButton?.visibility = View.GONE
-                    Toast.makeText(this@MainActivity, "OFFLINE SUCCESS: Dash Frozen Locally.", Toast.LENGTH_LONG).show()
+        webViewLive.evaluateJavascript(perfectCaptureScript) { ready ->
+            Handler(Looper.getMainLooper()).postDelayed({
+                webViewLive.saveWebArchive(archiveFile.absolutePath, false) { path ->
+                    if (path != null) {
+                        isCacheSeeded = true
+                        getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE).edit().putBoolean("cache_seeded", true).apply()
+                        verifyButton?.visibility = View.GONE
+                        Toast.makeText(this@MainActivity, "SUCCESS: Perfect 1220x2712 Copy Saved.", Toast.LENGTH_LONG).show()
+                    }
                 }
-            }
+            }, 800) // Slightly longer delay for high-density layout shift
         }
     }
 
@@ -101,11 +118,38 @@ class MainActivity : AppCompatActivity() {
         val rootLayout = FrameLayout(this)
         setContentView(rootLayout)
 
-        // 1. COMPACT MODE: Original hidden status bar method
+        // 1. COMPACT MODE: Restore immersive view
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val windowInsetsController = WindowInsetsControllerCompat(window, rootLayout)
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
         windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        // 2. ROBUST KEYBOARD HANDLING: Dynamic Layout Margins
+        rootLayout.viewTreeObserver.addOnGlobalLayoutListener {
+            val r = android.graphics.Rect()
+            rootLayout.getWindowVisibleDisplayFrame(r)
+            val screenHeight = rootLayout.rootView.height
+            val keypadHeight = screenHeight - r.bottom
+            
+            // If keypad height is > 15% of screen, it's likely open
+            val margin = if (keypadHeight > screenHeight * 0.15) keypadHeight else 0
+            
+            // Adjust margins for both views to push input above keyboard
+            (webViewLive.layoutParams as? FrameLayout.LayoutParams)?.let {
+                if (it.bottomMargin != margin) {
+                    it.bottomMargin = margin
+                    webViewLive.layoutParams = it
+                }
+            }
+            webViewOffline?.let { offline ->
+                (offline.layoutParams as? FrameLayout.LayoutParams)?.let {
+                    if (it.bottomMargin != margin) {
+                        it.bottomMargin = margin
+                        offline.layoutParams = it
+                    }
+                }
+            }
+        }
 
         archiveFile = File(filesDir, "gemini_static_v1.mht")
         val prefs = getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
@@ -163,7 +207,7 @@ class MainActivity : AppCompatActivity() {
             builtInZoomControls = false
             displayZoomControls = false
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+            userAgentString = "Mozilla/5.0 (Linux; Android 14; 24090RA29C) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
         }
         
         wv.addJavascriptInterface(WebAppInterface(this), "Android")
