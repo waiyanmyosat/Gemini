@@ -48,8 +48,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun onDashboardReady() {
-            // Automatic swap disabled to respect "Offline First" preference.
-            // Only swap when a prompt is sent or explicitly requested.
+            mainActivity.runOnUiThread { mainActivity.triggerInstantSwap() }
         }
     }
 
@@ -131,7 +130,7 @@ class MainActivity : AppCompatActivity() {
         // 3. Add Freeze Button
         if (!isCacheSeeded && !archiveFile.exists()) {
             verifyButton = Button(this).apply {
-                text = "FREEZE UI (OFFLINE MODE)"
+                text = "FREEZE THIS VIEW FOR OFFLINE USE"
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
                     gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
                     setMargins(0, 0, 0, 100)
@@ -192,17 +191,9 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                if (request?.isForMainFrame == true) {
-                    if (view == webViewLive) {
-                        // Background live failed? Stealthily keep it updated with cache
-                        view.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
-                    } else if (view == webViewOffline) {
-                        // Offline file critical error (rare) -> Fallback to live immediately
-                        mainActivity.runOnUiThread {
-                            webViewLive.alpha = 1.0f
-                            webViewOffline?.visibility = View.GONE
-                        }
-                    }
+                if (request?.isForMainFrame == true && view == webViewLive) {
+                    // If live fails, allow it to try again or stay on the offline view
+                    view.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
                 }
             }
 
