@@ -99,7 +99,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupWebView(wv: WebView) {
-        GeminiWebViewManager.configureSettings(wv)
+        GeminiWebViewManager.configureGeminiWebView(wv)
         
         wv.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -129,18 +129,6 @@ class MainActivity : AppCompatActivity() {
                 }
                 return true
             }
-
-            override fun onCreateWindow(
-                view: WebView?,
-                isDialog: Boolean,
-                isUserGesture: Boolean,
-                resultMsg: android.os.Message?
-            ): Boolean {
-                val transport = resultMsg?.obj as? WebView.WebViewTransport
-                transport?.webView = view
-                resultMsg?.sendToTarget()
-                return true
-            }
         }
         
         wv.webViewClient = object : WebViewClient() {
@@ -160,16 +148,10 @@ class MainActivity : AppCompatActivity() {
                                  host.contains("youtube.com") || 
                                  host.contains("googleusercontent.com") ||
                                  host.contains("googleapis.com") ||
-                                 host.contains("google.com") ||
-                                 host.contains("googleusercontent") ||
-                                 host.startsWith("accounts.") ||
-                                 url.contains("accounts.google") ||
                                  url.contains("SetSID") ||
                                  url.contains("signin") ||
                                  url.contains("ServiceLogin") ||
-                                 url.contains("/auth") ||
-                                 url.contains("google.com/accounts") ||
-                                 url.contains("github.com") // Extra safety for GitHub login if requested
+                                 url.contains("/auth")
 
                 if (isInternal) return false 
                 

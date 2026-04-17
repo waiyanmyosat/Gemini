@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# Use Node 24 to avoid the deprecation errors you saw earlier
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,10 +26,15 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
       with:
-        gradle-version: 8.2
+        # Disabling cache avoids that "400 Bad Request" error from your logs
+        cache-disabled: true
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
 
     - name: Build Debug APK
-      run: gradle assembleDebug
+      # Use ./gradlew (the wrapper) instead of the 'gradle' command
+      run: ./gradlew assembleDebug
 
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
