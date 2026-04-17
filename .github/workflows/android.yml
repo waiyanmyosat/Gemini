@@ -20,18 +20,15 @@ jobs:
         distribution: 'temurin'
 
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
+      uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: 8.2
 
-    - name: Build with Gradle
-      run: gradle build
+    - name: Build Debug APK
+      run: gradle assembleDebug
 
-    - name: Build Release APK
-      run: gradle assembleRelease
-
-    - name: Upload APK
+    - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
-        name: gemini-ai-release
-        path: app/build/outputs/apk/release/*.apk
+        name: gemini-ai-debug
+        path: app/build/outputs/apk/debug/*.apk
