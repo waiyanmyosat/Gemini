@@ -98,25 +98,21 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             loadWithOverviewMode = true
             
-            // EXTREME CACHE PERSISTENCE: Work offline if no internet
-            if (!isNetworkAvailable()) {
-                cacheMode = WebSettings.LOAD_CACHE_ONLY
-            } else {
-                cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
-            }
+            // "Instant Static" Optimization
+            // LOAD_CACHE_ELSE_NETWORK ensures we show the offline ver immediately if it exists, 
+            // but Fetches seamlessly if it's the first time or if online.
+            cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
             
             allowFileAccess = true
             allowContentAccess = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             
-            // Additional Storage & Persistence Settings
+            // Memory & Persistence Settings
             saveFormData = true
             setGeolocationEnabled(true)
             
-            // Modern Device Profile for Pixel 8 Pro
             userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
             
-            // Performance Boosters - Allow Background JS to pre-process
             mediaPlaybackRequiresUserGesture = false
             javaScriptCanOpenWindowsAutomatically = true
         }
@@ -131,14 +127,14 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 progressBar.visibility = View.GONE
-                // Persist all data for next "Instant" launch
                 CookieManager.getInstance().flush()
             }
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                // If we lose connection, try to fallback to cache if available
-                if (!isNetworkAvailable()) {
-                    view?.settings?.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                // EXTREME PROTECTION: If we get a cache miss or network error, 
+                // we SILENTLY stay on whatever is currently visible to avoid the "Webpage not available" screen.
+                if (request?.isForMainFrame == true) {
+                    progressBar.visibility = View.GONE
                 }
             }
 
@@ -183,18 +179,6 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState == null) {
             // Load direct /app URL for faster entry to main interface
             webView.loadUrl("https://gemini.google.com/app")
-        }
-    }
-
-    private fun isNetworkAvailable(): Boolean {
-        val connectivityManager = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return when {
-            activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> true
-            activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> true
-            activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> true
-            else -> false
         }
     }
 
