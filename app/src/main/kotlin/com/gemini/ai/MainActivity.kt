@@ -31,24 +31,25 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var archiveFile: File
     private var isCacheSeeded: Boolean = false
+    private var pendingPrompt: String? = null
 
     // Bridge for JS to notify Android of prompt sending
     class WebAppInterface(private val mainActivity: MainActivity) {
         @JavascriptInterface
-        fun onSendPrompt() {
+        fun onSendPrompt(text: String) {
             mainActivity.runOnUiThread {
-                mainActivity.enableNetworkAndReload()
+                mainActivity.enableNetworkAndReload(text)
             }
         }
     }
 
     /**
-     * When user sends a prompt from the static offline file,
-     * we "Wake Up" the real internet-connected site.
+     * Captures the message from the offline archive and re-loads 
+     * the live site to actually send it.
      */
-    fun enableNetworkAndReload() {
+    fun enableNetworkAndReload(text: String) {
+        pendingPrompt = text
         webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
-        // Switch from the local .mht file back to the live site
         webView.loadUrl("https://gemini.google.com/app")
     }
 
@@ -130,41 +131,79 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
 
-                // EXPLICIT LOGGED-IN CHECK: Trigger download only on Gemini dashboard
+                // 1. HANDLE PENDING PROMPT: If we just came from the offline file, send the message
+                pendingPrompt?.let { prompt ->
+                    val escapedText = prompt.replace("'", "\\'").replace("\n", "\\n")
+                    val injectionScript = """
+                        (function() {
+                            function trySend() {
+                                const textarea = document.querySelector('textarea, [contenteditable="true"]');
+                                const btn = document.querySelector('button[aria-label*="Send"], button.send-button');
+                                if (textarea && (btn || document.querySelector('svg.send-icon'))) {
+                                    if (textarea.tagName === 'TEXTAREA') {
+                                        textarea.value = '$escapedText';
+                                    } else {
+                                        textarea.innerText = '$escapedText';
+                                    }
+                                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                                    textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                                    setTimeout(() => {
+                                        const finalBtn = document.querySelector('button[aria-label*="Send"], button.send-button') || btn;
+                                        if (finalBtn) finalBtn.click();
+                                    }, 500);
+                                } else {
+                                    setTimeout(trySend, 1000);
+                                }
+                            }
+                            trySend();
+                        })();
+                    """.trimIndent()
+                    view?.evaluateJavascript(injectionScript, null)
+                    pendingPrompt = null
+                }
+
+                // 2. TRIGGER ARCHIVE: Only after successful login and dashboard load
                 if (!isCacheSeeded && url != null && url.contains("gemini.google.com/app")) {
-                    // Start manual Archive download
-                    view?.saveWebArchive(archiveFile.absolutePath, false) { path ->
-                        if (path != null) {
-                            isCacheSeeded = true
-                            getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
-                                .edit()
-                                .putBoolean("cache_seeded", true)
-                                .apply()
-                            
-                            val sizeKb = archiveFile.length() / 1024
-                            Toast.makeText(this@MainActivity, 
-                                "SUCCESS: Stored Website to Storage ($sizeKb KB).\nReloading in Local Mode...", 
-                                Toast.LENGTH_LONG).show()
-                            
-                            // Immediately switch to the local file
-                            view.loadUrl("file://" + archiveFile.absolutePath)
+                    // Wait for the heavy Gemini dashboard to fully settle (5 seconds)
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        view?.saveWebArchive(archiveFile.absolutePath, false) { path ->
+                            if (path != null) {
+                                isCacheSeeded = true
+                                getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
+                                    .edit()
+                                    .putBoolean("cache_seeded", true)
+                                    .apply()
+                                
+                                val sizeKb = archiveFile.length() / 1024
+                                Toast.makeText(this@MainActivity, 
+                                    "LOGIN SUCCESS: Gemini Stored Locally ($sizeKb KB).\nNow 100% Offline.", 
+                                    Toast.LENGTH_LONG).show()
+                                
+                                // Permanently switch to the cold-loading local file
+                                view.loadUrl("file://" + archiveFile.absolutePath)
+                                view.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                            }
                         }
-                    }
+                    }, 5000)
                 }
                 
-                // Inject reliable prompt detection
+                // 3. INJECT DETECTION: Reliable prompt detection (captured for re-injection)
                 val script = """
                     (function() {
                         const sendSelectors = [
                             'button[aria-label*="Send"]',
                             'button.send-button',
-                            'div[role="button"][aria-label*="Send"]',
                             'svg.send-icon'
                         ];
                         
+                        function getPromptText() {
+                            const textarea = document.querySelector('textarea, [contenteditable="true"]');
+                            return textarea ? (textarea.value || textarea.innerText) : "";
+                        }
+                        
                         document.addEventListener('click', function(e) {
                             if (e.target.closest(sendSelectors.join(','))) {
-                                Android.onSendPrompt();
+                                Android.onSendPrompt(getPromptText());
                             }
                         }, true);
                         
@@ -172,7 +211,7 @@ class MainActivity : AppCompatActivity() {
                             if (e.key === 'Enter' && !e.shiftKey) {
                                 const tag = e.target.tagName;
                                 if (tag === 'TEXTAREA' || e.target.getAttribute('contenteditable')) {
-                                    Android.onSendPrompt();
+                                    Android.onSendPrompt(getPromptText());
                                 }
                             }
                         }, true);
