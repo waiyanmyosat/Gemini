@@ -22,6 +22,12 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.webkit.WebResourceError
+import android.webkit.WebResourceResponse
+import androidx.core.content.ContextCompat
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
@@ -92,9 +98,13 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             loadWithOverviewMode = true
             
-            // EXTREME CACHE PERSISTENCE: Download and store 100% of everything encountered.
-            // This enables the "Instant Static" feel by reusing cached data without checking the network.
-            cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+            // EXTREME CACHE PERSISTENCE: Work offline if no internet
+            if (!isNetworkAvailable()) {
+                cacheMode = WebSettings.LOAD_CACHE_ONLY
+            } else {
+                cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+            }
+            
             allowFileAccess = true
             allowContentAccess = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
@@ -123,6 +133,13 @@ class MainActivity : AppCompatActivity() {
                 progressBar.visibility = View.GONE
                 // Persist all data for next "Instant" launch
                 CookieManager.getInstance().flush()
+            }
+
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                // If we lose connection, try to fallback to cache if available
+                if (!isNetworkAvailable()) {
+                    view?.settings?.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                }
             }
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -164,7 +181,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (savedInstanceState == null) {
-            webView.loadUrl("https://gemini.google.com")
+            // Load direct /app URL for faster entry to main interface
+            webView.loadUrl("https://gemini.google.com/app")
+        }
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return when {
+            activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> true
+            activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> true
+            activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> true
+            else -> false
         }
     }
 
