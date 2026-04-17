@@ -50,6 +50,8 @@ class MainActivity : AppCompatActivity() {
     fun enableNetworkAndReload(text: String) {
         pendingPrompt = text
         webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
+        // Use a flag to avoid re-triggering the archive save after a prompt refresh
+        isCacheSeeded = true 
         webView.loadUrl("https://gemini.google.com/app")
     }
 
@@ -164,27 +166,33 @@ class MainActivity : AppCompatActivity() {
 
                 // 2. TRIGGER ARCHIVE: Only after successful login and dashboard load
                 if (!isCacheSeeded && url != null && url.contains("gemini.google.com/app")) {
-                    // Wait for the heavy Gemini dashboard to fully settle (5 seconds)
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        view?.saveWebArchive(archiveFile.absolutePath, false) { path ->
-                            if (path != null) {
-                                isCacheSeeded = true
-                                getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
-                                    .edit()
-                                    .putBoolean("cache_seeded", true)
-                                    .apply()
-                                
-                                val sizeKb = archiveFile.length() / 1024
-                                Toast.makeText(this@MainActivity, 
-                                    "LOGIN SUCCESS: Gemini Stored Locally ($sizeKb KB).\nNow 100% Offline.", 
-                                    Toast.LENGTH_LONG).show()
-                                
-                                // Permanently switch to the cold-loading local file
-                                view.loadUrl("file://" + archiveFile.absolutePath)
-                                view.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
-                            }
+                    // VERIFY DASHBOARD: Check if the AI input field exists before downloading
+                    val checkScript = "document.querySelector('textarea, [contenteditable=\"true\"]') !== null"
+                    view?.evaluateJavascript(checkScript) { result ->
+                        if (result == "true") {
+                            // Wait for the heavy Gemini dashboard to fully settle (5 seconds)
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                view.saveWebArchive(archiveFile.absolutePath, false) { path ->
+                                    if (path != null) {
+                                        isCacheSeeded = true
+                                        getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
+                                            .edit()
+                                            .putBoolean("cache_seeded", true)
+                                            .apply()
+                                        
+                                        val sizeKb = archiveFile.length() / 1024
+                                        Toast.makeText(this@MainActivity, 
+                                            "FINAL LOGIN SUCCESS: Site Stored Locally ($sizeKb KB).\nUI is now 100% frozen.", 
+                                            Toast.LENGTH_LONG).show()
+                                        
+                                        // Permanently switch to the cold-loading local file
+                                        view.loadUrl("file://" + archiveFile.absolutePath)
+                                        view.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                                    }
+                                }
+                            }, 5000)
                         }
-                    }, 5000)
+                    }
                 }
                 
                 // 3. INJECT DETECTION: Reliable prompt detection (captured for re-injection)
