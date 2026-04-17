@@ -115,11 +115,14 @@ class MainActivity : AppCompatActivity() {
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
-                val host = request.url.host ?: ""
+                val host = request.url.host?.lowercase() ?: ""
 
-                val isInternal = host.contains("google.") || 
-                                 host.contains("gemini.google") || 
-                                 host.contains("gstatic.com")
+                // 1. BROAD GOOGLE AUTH FILTER: Include all domains used in the SetSID/Sign-in flow
+                val isInternal = host.contains("google.com") || 
+                                 host.contains("gstatic.com") ||
+                                 host.contains("youtube.com") || 
+                                 host.contains("googleusercontent.com") ||
+                                 host.contains("googleapis.com")
 
                 if (isInternal) return false 
                 
