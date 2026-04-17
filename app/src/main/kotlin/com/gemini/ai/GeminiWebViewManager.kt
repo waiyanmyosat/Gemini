@@ -66,6 +66,10 @@ object GeminiWebViewManager {
             javaScriptEnabled = true
             domStorageEnabled = true // Required for Gemini's state
             databaseEnabled = true
+            allowFileAccess = true
+            allowContentAccess = true
+            allowFileAccessFromFileURLs = true
+            allowUniversalAccessFromFileURLs = true
             
             // Resource Loading
             cacheMode = WebSettings.LOAD_DEFAULT
@@ -78,8 +82,9 @@ object GeminiWebViewManager {
             // Standard Browser properties
             useWideViewPort = true
             loadWithOverviewMode = true
-            allowFileAccess = true
-            allowContentAccess = true
+            setSupportZoom(false)
+            builtInZoomControls = false
+            displayZoomControls = false
 
             // Pop-up support
             javaScriptCanOpenWindowsAutomatically = true
