@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -29,40 +30,55 @@ class MainActivity : AppCompatActivity() {
         
         // Root layout to hold WebView and ProgressBar
         val rootLayout = FrameLayout(this)
+        rootLayout.id = View.generateViewId()
         
         webView = WebView(this)
+        // Ensure webview layout params are set for matching parent
+        webView.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
         rootLayout.addView(webView)
         
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
         progressBar.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
-            10 // 10px height
+            12 // Slightly taller for visibility
         )
         progressBar.progressDrawable.setTint(resources.getColor(android.R.color.holo_blue_light, theme))
         rootLayout.addView(progressBar)
         
         setContentView(rootLayout)
 
+        // Login Persistence: Enable Persistent Cookies
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(webView, true)
+
         // Hide status bar and navigation bars (Immersive Mode)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, rootLayout).let { controller ->
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
+        val windowInsetsController = WindowInsetsControllerCompat(window, rootLayout)
+        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+        windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-        // Fix Keyboard Overlap (Issue #1)
-        // Adjust WebView padding when keyboard (IME) shows up
+        // Fix Keyboard Overlap (Issue #1) - Using Margins instead of Padding for better compatibility
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
             val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
             val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
             
-            // Apply padding to avoid keyboard obscuring the input
+            val params = webView.layoutParams as FrameLayout.LayoutParams
             if (imeVisible) {
-                webView.setPadding(0, 0, 0, imeHeight)
+                // When keyboard is up, we should NOT be in immersive mode for the navigation bar area
+                // to allow the keyboard to measure correctly, but here we just adjust bottom margin
+                params.bottomMargin = imeHeight
+                // Briefly show system bars to allow correct layout calculation if needed
+                // windowInsetsController.show(WindowInsetsCompat.Type.navigationBars())
             } else {
-                webView.setPadding(0, 0, 0, systemBars)
+                params.bottomMargin = systemBars
+                // windowInsetsController.hide(WindowInsetsCompat.Type.navigationBars())
             }
+            webView.layoutParams = params
             insets
         }
 
@@ -76,22 +92,19 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             loadWithOverviewMode = true
             
-            // Performance Optimizations (Issue #2)
+            // Performance & Persistence Optimizations
             cacheMode = WebSettings.LOAD_DEFAULT
             allowFileAccess = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             
-            userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+            // Modern User Agent
+            userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
         }
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 progressBar.progress = newProgress
-                if (newProgress >= 90) {
-                    progressBar.visibility = View.GONE
-                } else {
-                    progressBar.visibility = View.VISIBLE
-                }
+                progressBar.visibility = if (newProgress >= 95) View.GONE else View.VISIBLE
             }
         }
 
@@ -102,6 +115,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 progressBar.visibility = View.GONE
+                // Persist cookies after page load
+                CookieManager.getInstance().flush()
             }
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
