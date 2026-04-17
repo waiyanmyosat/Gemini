@@ -123,9 +123,14 @@ class MainActivity : AppCompatActivity() {
                 val host = request.url.host ?: ""
 
                 // Define internal domains that stay inside the app
-                val isInternal = host.endsWith("gemini.google.com") || 
-                                host.endsWith("accounts.google.com") || 
-                                host.endsWith("myaccount.google.com")
+                // Broadened Google Login matching to catch redirections during "Next" clicks
+                val isInternal = host.contains("gemini.google.com") || 
+                                host.contains("accounts.google") || 
+                                host.contains("myaccount.google") ||
+                                host.contains("google.com/accounts") ||
+                                url.contains("/ServiceLogin") ||
+                                url.contains("/InteractiveLogin") ||
+                                host.endsWith("googleusercontent.com")
 
                 if (isInternal) {
                     return false // Load in WebView
