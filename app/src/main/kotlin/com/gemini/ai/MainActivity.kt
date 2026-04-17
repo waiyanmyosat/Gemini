@@ -74,6 +74,7 @@ class MainActivity : AppCompatActivity() {
         // 3. CREATE WEBVIEW
         webViewLive = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            visibility = android.view.View.INVISIBLE // Start hidden for optimization
         }
         rootLayout.addView(webViewLive)
 
@@ -98,20 +99,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupWebView(wv: WebView) {
-        wv.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            databaseEnabled = true
-            useWideViewPort = true
-            loadWithOverviewMode = true
-            allowFileAccess = true
-            allowContentAccess = true
-            setSupportZoom(false)
-            builtInZoomControls = false
-            displayZoomControls = false
-            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-        }
+        GeminiWebViewManager.configureGeminiWebView(wv)
         
         wv.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -146,6 +134,8 @@ class MainActivity : AppCompatActivity() {
         wv.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
+                // Reveal the WebView only after content is loaded
+                wv.visibility = android.view.View.VISIBLE
             }
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {

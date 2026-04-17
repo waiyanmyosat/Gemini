@@ -40,12 +40,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    implementation("androidx.webkit:webkit:1.9.0")
-    
-    // Credential Manager for standard Auth Proof
-    implementation("androidx.credentials:credentials:1.2.1")
-    implementation("androidx.credentials:credentials-play-services-auth:1.2.1")
-    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.0")
+    implementation("androidx.webkit:webkit:1.12.1")
     
     // Coroutines & Lifecycle for the suspend function
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
