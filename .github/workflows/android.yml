@@ -27,7 +27,7 @@ jobs:
       uses: gradle/actions/setup-gradle@v4
       with:
         # Specifying a version since the wrapper script (gradlew) is missing
-        gradle-version: 8.5
+        gradle-version: 8.9
         # Disabling cache avoids that "400 Bad Request" error from your logs
         cache-disabled: true
 
