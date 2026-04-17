@@ -1,7 +1,9 @@
 package com.gemini.ai
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -72,11 +74,8 @@ class MainActivity : AppCompatActivity() {
                 // When keyboard is up, we should NOT be in immersive mode for the navigation bar area
                 // to allow the keyboard to measure correctly, but here we just adjust bottom margin
                 params.bottomMargin = imeHeight
-                // Briefly show system bars to allow correct layout calculation if needed
-                // windowInsetsController.show(WindowInsetsCompat.Type.navigationBars())
             } else {
                 params.bottomMargin = systemBars
-                // windowInsetsController.hide(WindowInsetsCompat.Type.navigationBars())
             }
             webView.layoutParams = params
             insets
@@ -120,7 +119,27 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                return false
+                val url = request?.url?.toString() ?: return false
+                val host = request.url.host ?: ""
+
+                // Define internal domains that stay inside the app
+                val isInternal = host.endsWith("gemini.google.com") || 
+                                host.endsWith("accounts.google.com") || 
+                                host.endsWith("myaccount.google.com")
+
+                if (isInternal) {
+                    return false // Load in WebView
+                } else {
+                    // External link: Open in default browser
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                        return true // WebView shouldn't load this
+                    } catch (e: Exception) {
+                        return false // Fallback if browser can't be opened
+                    }
+                }
             }
         }
 
