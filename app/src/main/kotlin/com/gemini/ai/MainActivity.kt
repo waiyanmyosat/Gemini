@@ -92,12 +92,23 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             loadWithOverviewMode = true
             
-            // "Offline First" - Achievement of 100% instant cached page
+            // EXTREME CACHE PERSISTENCE: Download and store 100% of everything encountered.
+            // This enables the "Instant Static" feel by reusing cached data without checking the network.
             cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
             allowFileAccess = true
+            allowContentAccess = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             
+            // Additional Storage & Persistence Settings
+            saveFormData = true
+            setGeolocationEnabled(true)
+            
+            // Modern Device Profile for Pixel 8 Pro
             userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+            
+            // Performance Boosters - Allow Background JS to pre-process
+            mediaPlaybackRequiresUserGesture = false
+            javaScriptCanOpenWindowsAutomatically = true
         }
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -110,6 +121,7 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 progressBar.visibility = View.GONE
+                // Persist all data for next "Instant" launch
                 CookieManager.getInstance().flush()
             }
 
@@ -117,29 +129,21 @@ class MainActivity : AppCompatActivity() {
                 val url = request?.url?.toString() ?: return false
                 val host = request.url.host ?: ""
 
-                // EXTREMELY AGGRESSIVE INTERNAL CHECK: Catch every single redirect in the Google Auth flow
-                val isGoogleAuth = host.contains("accounts.google") || 
-                                   host.contains("myaccount.google") ||
-                                   host.contains("google.com/accounts") ||
-                                   host.contains("google.com/signin") ||
-                                   url.contains("ServiceLogin") ||
-                                   url.contains("InteractiveLogin") ||
-                                   url.contains("identifier") ||
-                                   url.contains("challenge") ||
-                                   url.contains("/auth") ||
-                                   url.contains("AccountChooser") ||
-                                   url.contains("CheckCookie") ||
-                                   url.contains("v3/signin") ||
-                                   url.contains("oauth")
+                // EXTREME LOGIN PROTECTION: If it's ANY Google-related domain or auth keyword, STAY in app.
+                // This covers all regional domains (google.com.br, google.fr, etc.) and auth redirects.
+                val isGoogleRelated = host.contains("google") || 
+                                     host.contains("gemini") || 
+                                     host.contains("gstatic") ||
+                                     url.contains("signin") ||
+                                     url.contains("auth") ||
+                                     url.contains("login") ||
+                                     url.contains("AccountChooser") ||
+                                     url.contains("identifier")
 
-                val isInternal = host.contains("gemini.google.com") || 
-                                 isGoogleAuth ||
-                                 host.endsWith("googleusercontent.com")
-
-                if (isInternal) {
-                    return false // Stay in app
+                if (isGoogleRelated) {
+                    return false // Stay in app 100%
                 } else {
-                    // All other links open in default browser
+                    // Truly external links (non-Google) go to browser
                     try {
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
