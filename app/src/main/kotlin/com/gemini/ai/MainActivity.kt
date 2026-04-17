@@ -131,16 +131,23 @@ class MainActivity : AppCompatActivity() {
 
                 // EXTREME LOGIN PROTECTION: If it's ANY Google-related domain or auth keyword, STAY in app.
                 // This covers all regional domains (google.com.br, google.fr, etc.) and auth redirects.
-                val isGoogleRelated = host.contains("google") || 
-                                     host.contains("gemini") || 
-                                     host.contains("gstatic") ||
-                                     url.contains("signin") ||
-                                     url.contains("auth") ||
-                                     url.contains("login") ||
-                                     url.contains("AccountChooser") ||
-                                     url.contains("identifier")
+                val isGoogleAuth = host.contains("accounts.google") || 
+                                   host.contains("myaccount.google") ||
+                                   host.contains("accounts.youtube") || // Essential for Session Sync
+                                   url.contains("SetSID") ||
+                                   url.contains("signin") ||
+                                   url.contains("auth") ||
+                                   url.contains("login") ||
+                                   url.contains("AccountChooser") ||
+                                   url.contains("identifier") ||
+                                   url.contains("challenge")
 
-                if (isGoogleRelated) {
+                val isInternal = host.contains("google") || 
+                                 host.contains("gemini") || 
+                                 host.contains("gstatic") ||
+                                 isGoogleAuth
+
+                if (isInternal) {
                     return false // Stay in app 100%
                 } else {
                     // Truly external links (non-Google) go to browser
