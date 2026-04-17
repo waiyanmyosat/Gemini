@@ -51,6 +51,21 @@ class MainActivity : AppCompatActivity() {
         fun onSendPrompt(text: String) {
             mainActivity.runOnUiThread { mainActivity.handleOfflinePrompt(text) }
         }
+
+        @JavascriptInterface
+        fun onShellReady(version: String? = null) {
+            mainActivity.runOnUiThread { 
+                mainActivity.onShellHydrated(version)
+            }
+        }
+    }
+
+    /**
+     * Called when the Instant Swap index.html shell is ready
+     */
+    fun onShellHydrated(version: String?) {
+        // Swap to the live site now that the shell is visible
+        webView.loadUrl("https://gemini.google.com/app")
     }
 
     /**
@@ -92,12 +107,6 @@ class MainActivity : AppCompatActivity() {
         // Use Live mode initially if no archive exists
         isLoginMode = !archiveFile.exists()
 
-        // 1. CONFIGURE ASSET LOADER
-        assetLoader = WebViewAssetLoader.Builder()
-            .setDomain("gemini.google.com") // Fake domain matching for CORS
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
-            .build()
-
         webView = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         }
@@ -122,7 +131,8 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         
         if (savedInstanceState == null) {
-            webView.loadUrl("https://gemini.google.com/app")
+            // Load the internal Instant Swap shell instead of the live site directly
+            webView.loadUrl("https://appassets.androidplatform.net/assets/index.html")
         }
     }
 
@@ -153,9 +163,17 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             allowFileAccess = true
             allowContentAccess = true
+            allowFileAccessFromFileURLs = true
+            allowUniversalAccessFromFileURLs = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
         }
+
+        // Configure Asset Loader for internal files to avoid ERR_ACCESS_DENIED
+        assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/local/", WebViewAssetLoader.InternalStoragePathHandler(this, filesDir))
+            .build()
         
         webView.addJavascriptInterface(WebAppInterface(this), "Android")
         
@@ -164,7 +182,11 @@ class MainActivity : AppCompatActivity() {
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val url = request?.url?.toString() ?: return null
                 
-                // CORE INTERCEPT: If not in login mode, serve the static Dashboard Shell
+                // 1. Try AssetLoader (handles appassets.androidplatform.net)
+                val assetResponse = assetLoader.shouldInterceptRequest(request.url)
+                if (assetResponse != null) return assetResponse
+
+                // 2. CORE INTERCEPT: If not in login mode, serve the static Dashboard Shell
                 if (!isLoginMode && (url.contains("gemini.google.com/app") || url == "https://gemini.google.com/")) {
                     if (archiveFile.exists()) {
                         try {
@@ -174,8 +196,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 
-                // Handle static assets (CSS/JS) via WebViewAssetLoader if needed
-                return assetLoader.shouldInterceptRequest(request.url)
+                return null
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
