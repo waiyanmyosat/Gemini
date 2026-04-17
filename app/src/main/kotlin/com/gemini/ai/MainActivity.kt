@@ -97,9 +97,11 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Setup the view hierarchy first
         val rootLayout = FrameLayout(this)
-        
-        // 1. COMPACT MODE: Hide system bars for an immersive feel
+        setContentView(rootLayout)
+
+        // 1. COMPACT MODE: Original hidden status bar method
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val windowInsetsController = WindowInsetsControllerCompat(window, rootLayout)
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
@@ -109,14 +111,15 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
         isCacheSeeded = prefs.getBoolean("cache_seeded", false)
 
-        // 1. CREATE LIVE WEBVIEW (Background)
+        // 1. CREATE LIVE WEBVIEW
         webViewLive = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             alpha = if (archiveFile.exists()) 0.0f else 1.0f 
         }
         rootLayout.addView(webViewLive)
+        setupWebView(webViewLive)
 
-        // 2. CREATE OFFLINE WEBVIEW (Foreground Instant)
+        // 2. CREATE OFFLINE WEBVIEW
         if (archiveFile.exists()) {
             webViewOffline = WebView(this).apply {
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
@@ -130,7 +133,7 @@ class MainActivity : AppCompatActivity() {
         // 3. Add Freeze Button
         if (!isCacheSeeded && !archiveFile.exists()) {
             verifyButton = Button(this).apply {
-                text = "FREEZE THIS VIEW FOR OFFLINE USE"
+                text = "FREEZE UI FOR OFFLINE"
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
                     gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
                     setMargins(0, 0, 0, 100)
@@ -139,10 +142,6 @@ class MainActivity : AppCompatActivity() {
             }
             rootLayout.addView(verifyButton)
         }
-        
-        setContentView(rootLayout)
-
-        setupWebView(webViewLive)
         
         if (savedInstanceState == null) {
             webViewLive.loadUrl("https://gemini.google.com/app")
