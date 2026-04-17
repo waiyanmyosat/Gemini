@@ -25,15 +25,6 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import java.io.File
 
-// Credential Manager Imports
-import androidx.credentials.CredentialManager
-import androidx.credentials.GetCredentialRequest
-import androidx.credentials.CustomCredential
-import androidx.credentials.exceptions.GetCredentialException
-import androidx.credentials.exceptions.GetCredentialCancellationException
-import androidx.credentials.exceptions.GetCredentialInterruptedException
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -41,63 +32,58 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var webView: WebView
-    private var verifyButton: Button? = null // Native button for "Proof of Success"
+    private lateinit var webViewLive: WebView
+    private var webViewOffline: WebView? = null
+    private var verifyButton: Button? = null 
     private lateinit var archiveFile: File
     private var isCacheSeeded: Boolean = false
     private var pendingPrompt: String? = null
+    private var isReadyToSwap = false
 
-    // Replace with your real Web Client ID from Google Cloud Console
-    private val GOOGLE_WEB_CLIENT_ID = "YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"
-
-    // Bridge for JS to notify Android of prompt sending
     class WebAppInterface(private val mainActivity: MainActivity) {
         @JavascriptInterface
         fun onSendPrompt(text: String) {
-            mainActivity.runOnUiThread {
-                mainActivity.enableNetworkAndReload(text)
-            }
+            mainActivity.runOnUiThread { mainActivity.enableNetworkAndReload(text) }
+        }
+
+        @JavascriptInterface
+        fun onDashboardReady() {
+            mainActivity.runOnUiThread { mainActivity.triggerInstantSwap() }
         }
     }
 
-    /**
-     * Captures the message from the offline archive and re-loads 
-     * the live site to actually send it.
-     */
     fun enableNetworkAndReload(text: String) {
         pendingPrompt = text
-        webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
-        // Use a flag to avoid re-triggering any downloads during prompt re-injection
-        isCacheSeeded = true 
-        webView.loadUrl("https://gemini.google.com/app")
+        webViewLive.settings.cacheMode = WebSettings.LOAD_DEFAULT
+        webViewLive.loadUrl("https://gemini.google.com/app")
+        // If we were offline, ensure the live view becomes visible if it wasn't yet
+        webViewLive.alpha = 1.0f
+        webViewOffline?.visibility = View.GONE
     }
 
     /**
-     * MANUAL DOWNLOAD PROTOCOL:
-     * This triggers whenever the user clicks the native button.
-     * It captures exactly what is currently visible in the WebView.
+     * Fades out the offline archive and reveals the live dashboard
+     * without any visible reload flicker.
      */
-    private fun triggerPhysicalDownload() {
-        Toast.makeText(this, "Downloading current view... Please wait.", Toast.LENGTH_SHORT).show()
+    fun triggerInstantSwap() {
+        if (isReadyToSwap || webViewOffline == null) return
+        isReadyToSwap = true
         
-        webView.saveWebArchive(archiveFile.absolutePath, false) { path ->
+        webViewLive.animate().alpha(1.0f).setDuration(500).start()
+        webViewOffline?.animate()?.alpha(0.0f)?.setDuration(500)?.withEndAction {
+            webViewOffline?.visibility = View.GONE
+        }?.start()
+    }
+
+    private fun triggerPhysicalDownload() {
+        Toast.makeText(this, "Freezing current dashboard...", Toast.LENGTH_SHORT).show()
+        
+        webViewLive.saveWebArchive(archiveFile.absolutePath, false) { path ->
             if (path != null) {
                 isCacheSeeded = true
-                getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
-                    .edit()
-                    .putBoolean("cache_seeded", true)
-                    .apply()
-                
-                // Hide the button after a successful capture
+                getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE).edit().putBoolean("cache_seeded", true).apply()
                 verifyButton?.visibility = View.GONE
-                
-                Toast.makeText(this@MainActivity, "SUCCESS: Site Frozen into Physical Memory.", Toast.LENGTH_LONG).show()
-                
-                // PERMANENT LOCK: Switch to the local file URL immediately
-                webView.loadUrl("file://" + archiveFile.absolutePath)
-                webView.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
-            } else {
-                Toast.makeText(this@MainActivity, "Error: Storage is full or not accessible.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "SUCCESS: Dashboard Frozen Offline.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -107,206 +93,126 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         
         val rootLayout = FrameLayout(this)
-        
-        // 1. SETUP PATHS AND STATE FIRST
         archiveFile = File(filesDir, "gemini_static_v1.mht")
         val prefs = getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
         isCacheSeeded = prefs.getBoolean("cache_seeded", false)
 
-        webView = WebView(this)
-        webView.layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        )
-        webView.visibility = View.VISIBLE 
-        rootLayout.addView(webView)
+        // 1. CREATE LIVE WEBVIEW (Background)
+        webViewLive = WebView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            alpha = if (archiveFile.exists()) 0.0f else 1.0f 
+        }
+        rootLayout.addView(webViewLive)
+
+        // 2. CREATE OFFLINE WEBVIEW (Foreground Instant)
+        if (archiveFile.exists()) {
+            webViewOffline = WebView(this).apply {
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                settings.javaScriptEnabled = true
+                loadUrl("file://" + archiveFile.absolutePath)
+            }
+            rootLayout.addView(webViewOffline)
+        }
         
-        // 2. Add Native Verification Button ONLY if no local version exists
+        // 3. Add Freeze Button
         if (!isCacheSeeded && !archiveFile.exists()) {
-            val btn = Button(this).apply {
+            verifyButton = Button(this).apply {
                 text = "FREEZE THIS VIEW FOR OFFLINE USE"
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
                     gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
                     setMargins(0, 0, 0, 100)
                 }
                 setOnClickListener { triggerPhysicalDownload() }
             }
-            verifyButton = btn
-            rootLayout.addView(btn)
+            rootLayout.addView(verifyButton)
         }
         
         setContentView(rootLayout)
 
-        // Persistence Configuration
-        val cookieManager = CookieManager.getInstance()
-        cookieManager.setAcceptCookie(true)
-        cookieManager.setAcceptThirdPartyCookies(webView, true)
+        setupWebView(webViewLive)
         
-        // Connect JS bridge
-        webView.addJavascriptInterface(WebAppInterface(this), "Android")
-
-        // Screen Settings
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        val windowInsetsController = WindowInsetsControllerCompat(window, rootLayout)
-        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
-        windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-
-        // Fix Keyboard Overlap
-        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
-            val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
-            val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
-            val params = webView.layoutParams as FrameLayout.LayoutParams
-            params.bottomMargin = if (imeVisible) imeHeight else systemBars
-            webView.layoutParams = params
-            insets
+        if (savedInstanceState == null) {
+            webViewLive.loadUrl("https://gemini.google.com/app")
         }
+    }
 
-        webView.settings.apply {
+    private fun setupWebView(wv: WebView) {
+        wv.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
             useWideViewPort = true
             loadWithOverviewMode = true
-            
-            // 100% OFFLINE FIRST:
-            // If the local archive exists, we will load it directly.
-            if (archiveFile.exists()) {
-                cacheMode = WebSettings.LOAD_CACHE_ONLY
-            } else {
-                // Initial session: allow internet to reach login/app
-                cacheMode = WebSettings.LOAD_DEFAULT
-            }
-            
             allowFileAccess = true
             allowContentAccess = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
         }
-
-        webView.webChromeClient = object : WebChromeClient() {
-            // Zero loading indicators for a "Static Object" feel
-        }
-
-        webView.webViewClient = object : WebViewClient() {
-            private var hasRefreshedToLive = false
-
+        
+        wv.addJavascriptInterface(WebAppInterface(this), "Android")
+        wv.webChromeClient = WebChromeClient()
+        
+        wv.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
 
-                // PROTOCOL: 1. Load offline instantly. 2. Refresh to live in background.
-                if (url != null && url.startsWith("file://") && !hasRefreshedToLive) {
-                    hasRefreshedToLive = true
-                    // Give the user a moment to see the instant offline UI
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
-                        webView.loadUrl("https://gemini.google.com/app")
-                    }, 500) // 500ms delay to ensure the offline page is visually "in place"
-                    return
-                }
-
-                // 2. CLEAR PENDING PROMPTS (if any were caught during the quick swap)
-                pendingPrompt?.let { prompt ->
-                    val escapedText = prompt.replace("'", "\\'").replace("\n", "\\n")
-                    val injectionScript = """
+                // If loading live site and it's initialized, signal the swap
+                if (url?.contains("gemini.google.com") == true) {
+                    val swapCheck = """
                         (function() {
-                            let attempts = 0;
-                            function trySend() {
-                                const textarea = document.querySelector('textarea, div[contenteditable="true"], .ql-editor');
-                                const btn = document.querySelector('button[aria-label*="Send"], button[type="submit"]');
-                                
-                                if (textarea && (btn || attempts > 10)) {
-                                    if (textarea.tagName === 'TEXTAREA') {
-                                        textarea.value = '$escapedText';
-                                    } else {
-                                        textarea.innerText = '$escapedText';
-                                    }
-                                    const events = ['input', 'change', 'keydown', 'keyup', 'keypress'];
-                                    events.forEach(evt => textarea.dispatchEvent(new Event(evt, { bubbles: true })));
-                                    setTimeout(() => { if (btn) { btn.disabled = false; btn.click(); } }, 500);
-                                } else {
-                                    attempts++;
-                                    setTimeout(trySend, 1000);
-                                }
+                            const isDashboard = !!document.querySelector('textarea, div[contenteditable="true"]');
+                            if (isDashboard) {
+                                Android.onDashboardReady();
                             }
-                            trySend();
                         })();
                     """.trimIndent()
-                    view?.evaluateJavascript(injectionScript, null)
-                    pendingPrompt = null
+                    view?.evaluateJavascript(swapCheck, null)
                 }
-                
-                // 3. INJECT DETECTION: Keep the bridge active for both offline and live states
-                val script = """
-                    (function() {
-                        const sendSelectors = ['button[aria-label*="Send"]', 'button.send-button', 'svg.send-icon', '.send-button-container'];
-                        function getPromptText() {
-                            const textarea = document.querySelector('textarea, div[contenteditable="true"], .ql-editor');
-                            return textarea ? (textarea.value || textarea.innerText) : "";
-                        }
-                        document.addEventListener('click', function(e) {
-                            const btn = e.target.closest(sendSelectors.join(','));
-                            if (btn) {
-                                // If the app is still in 'file://' mode during click, use the bridge
-                                if (window.location.protocol === 'file:') {
-                                    e.preventDefault();
-                                    Android.onSendPrompt(getPromptText());
-                                }
-                            }
-                        }, true);
-                    })();
-                """.trimIndent()
-                view?.evaluateJavascript(script, null)
-            }
 
-            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                // If the static cache is somehow missing or we hit ERR_CACHE_MISS, 
-                // allow a brief network bridge to recover.
-                if (request?.isForMainFrame == true) {
-                    view?.settings?.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
-                    view?.loadUrl(request.url.toString())
-                }
-            }
-
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val url = request?.url?.toString() ?: return false
-                val host = request.url.host ?: ""
-
-                val isInternal = host.contains("google.") || 
-                                 host.contains("gemini.google") || 
-                                 host.contains("gstatic.com") ||
-                                 host.contains("youtube.com") || 
-                                 url.contains("SetSID") ||
-                                 url.contains("signin") ||
-                                 url.contains("auth")
-
-                if (isInternal) return false 
-                
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(intent)
-                    return true
-                } catch (e: Exception) { return false }
-            }
-        }
-
-        if (savedInstanceState == null) {
-            if (archiveFile.exists()) {
-                // PROOF: Loading 100% local physical file
-                webView.loadUrl("file://" + archiveFile.absolutePath)
-            } else {
-                webView.loadUrl("https://gemini.google.com/app")
+                // Handle prompts and detect sends as before
+                handlePrompts(view)
             }
         }
     }
 
+    private fun handlePrompts(view: WebView?) {
+        pendingPrompt?.let { prompt ->
+            val escapedText = prompt.replace("'", "\\'").replace("\n", "\\n")
+            val script = """
+                (function() {
+                    const textarea = document.querySelector('textarea, div[contenteditable="true"], .ql-editor');
+                    const btn = document.querySelector('button[aria-label*="Send"], button[type="submit"]');
+                    if (textarea) {
+                        textarea.value = '$escapedText';
+                        textarea.innerText = '$escapedText';
+                        ['input', 'change'].forEach(e => textarea.dispatchEvent(new Event(e, { bubbles: true })));
+                        setTimeout(() => { if (btn) btn.click(); }, 500);
+                    }
+                })();
+            """.trimIndent()
+            view?.evaluateJavascript(script, null)
+            pendingPrompt = null
+        }
+        
+        val detectionScript = """
+            (function() {
+                const sendSelectors = ['button[aria-label*="Send"]', 'svg.send-icon', '.send-button-container'];
+                document.addEventListener('click', function(e) {
+                    const btn = e.target.closest(sendSelectors.join(','));
+                    if (btn) {
+                        const textarea = document.querySelector('textarea, div[contenteditable="true"], .ql-editor');
+                        if (textarea) Android.onSendPrompt(textarea.value || textarea.innerText);
+                    }
+                }, true);
+            })();
+        """.trimIndent()
+        view?.evaluateJavascript(detectionScript, null)
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
-            webView.goBack()
+        if (keyCode == KeyEvent.KEYCODE_BACK && webViewLive.canGoBack()) {
+            webViewLive.goBack()
             return true
         }
         return super.onKeyDown(keyCode, event)
@@ -314,11 +220,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        webView.saveState(outState)
+        webViewLive.saveState(outState)
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
         super.onRestoreInstanceState(savedInstanceState)
-        webView.restoreState(savedInstanceState)
+        webViewLive.restoreState(savedInstanceState)
     }
 }

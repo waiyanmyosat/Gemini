@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instant Swap PWA</title>
+    
+    <style>
+        /* CSS stays here so there is no white flash during the swap */
+        body { margin: 0; background: #121212; color: #eee; font-family: sans-serif; overflow: hidden; }
+        #loading-screen { 
+            display: flex; height: 100vh; width: 100vw; align-items: center; justify-content: center; 
+            position: fixed; top: 0; left: 0; z-index: 1000; background: #121212;
+            transition: opacity 0.5s ease-out;
+        }
+    </style>
+
+    <script>
+        // ==========================================
+        // 1. CONFIGURATION
+        // ==========================================
+        const APP_VERSION = "v1.0.1"; 
+
+        // ==========================================
+        // 2. EMBEDDED SERVICE WORKER (Gatekeeper)
+        // ==========================================
+        const swCode = `
+            const CACHE_NAME = "${APP_VERSION}";
+            self.addEventListener('install', e => self.skipWaiting());
+            self.addEventListener('activate', e => e.waitUntil(clients.claim()));
+            
+            self.addEventListener('message', e => {
+                if (e.data.type === 'GET_VERSION') {
+                    e.source.postMessage({ version: CACHE_NAME });
+                }
+            });
+
+            self.addEventListener('fetch', e => {
+                e.respondWith(caches.match(e.request).then(res => res || fetch(e.request)));
+            });
+        `;
+
+        const swBlob = new Blob([swCode], { type: 'application/javascript' });
+        const swUrl = URL.createObjectURL(swBlob);
+
+        // ==========================================
+        // 3. THE LAUNCHER LOGIC
+        // ==========================================
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register(swUrl).then(reg => {
+                reg.update(); 
+
+                const launch = () => {
+                    const sw = navigator.serviceWorker.controller;
+                    
+                    if (!sw) {
+                        // First time: Notify Android we are ready for the live bridge
+                        if (window.Android) window.Android.onShellReady();
+                    } else {
+                        const channel = new MessageChannel();
+                        channel.port1.onmessage = (e) => {
+                            const version = e.data.version;
+                            if (window.Android) window.Android.onShellReady(version);
+                        };
+                        sw.postMessage({ type: 'GET_VERSION' }, [channel.port2]);
+                    }
+                };
+
+                launch();
+            });
+        }
+    </script>
+</head>
+<body>
+    <div id="loading-screen">
+        <h1 id="status-text">Instant Hydration...</h1>
+    </div>
+</body>
+</html>
