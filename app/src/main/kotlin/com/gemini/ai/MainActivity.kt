@@ -53,12 +53,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun enableNetworkAndReload(text: String) {
+        // CRITICAL: If we are already in the live view (alpha 1.0), 
+        // DO NOT refresh. This prevents the "reset on chat" bug.
+        if (webViewLive.alpha >= 1.0f && !webViewLive.url.isNullOrEmpty()) {
+            return
+        }
+        
         pendingPrompt = text
+        isReadyToSwap = false // Reset swap flag for the new transition
         webViewLive.settings.cacheMode = WebSettings.LOAD_DEFAULT
         webViewLive.loadUrl("https://gemini.google.com/app")
-        // If we were offline, ensure the live view becomes visible if it wasn't yet
-        webViewLive.alpha = 1.0f
-        webViewOffline?.visibility = View.GONE
+        
+        // Show progress or keep offline visible while live reloads in background
+        webViewLive.alpha = 0.0f 
+        webViewOffline?.visibility = View.VISIBLE
+        webViewOffline?.alpha = 1.0f
     }
 
     /**
@@ -275,7 +284,8 @@ class MainActivity : AppCompatActivity() {
                     view.evaluateJavascript(swapCheck, null)
                 }
 
-                if (view == webViewLive) handlePrompts(view)
+                // Inject prompt handlers and detection into BOTH views
+                handlePrompts(view)
             }
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
@@ -309,32 +319,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handlePrompts(view: WebView?) {
-        pendingPrompt?.let { prompt ->
-            val escapedText = prompt.replace("'", "\\'").replace("\n", "\\n")
+        // 1. INJECTION: If we have a prompt waiting (from offline), put it in and send
+        if (view == webViewLive && pendingPrompt != null) {
+            val escapedText = pendingPrompt?.replace("'", "\\'")?.replace("\n", "\\n") ?: ""
             val script = """
                 (function() {
                     const textarea = document.querySelector('textarea, div[contenteditable="true"], .ql-editor');
-                    const btn = document.querySelector('button[aria-label*="Send"], button[type="submit"]');
+                    const btn = document.querySelector('button[aria-label*="Send"], button[type="submit"], [role="button"][aria-label*="Send"]');
                     if (textarea) {
                         textarea.value = '$escapedText';
                         textarea.innerText = '$escapedText';
                         ['input', 'change'].forEach(e => textarea.dispatchEvent(new Event(e, { bubbles: true })));
-                        setTimeout(() => { if (btn) btn.click(); }, 500);
+                        setTimeout(() => { if (btn) btn.click(); }, 800);
                     }
                 })();
             """.trimIndent()
-            view?.evaluateJavascript(script, null)
+            view.evaluateJavascript(script, null)
             pendingPrompt = null
         }
         
+        // 2. DETECTION: Listen for send clicks to handle transitions if offline
         val detectionScript = """
             (function() {
-                const sendSelectors = ['button[aria-label*="Send"]', 'svg.send-icon', '.send-button-container'];
+                const sendSelectors = [
+                    'button[aria-label*="Send"]', 
+                    'svg.send-icon', 
+                    '.send-button-container', 
+                    '[role="button"][aria-label*="Send"]',
+                    '.chat-input-container button'
+                ];
                 document.addEventListener('click', function(e) {
                     const btn = e.target.closest(sendSelectors.join(','));
                     if (btn) {
                         const textarea = document.querySelector('textarea, div[contenteditable="true"], .ql-editor');
-                        if (textarea) Android.onSendPrompt(textarea.value || textarea.innerText);
+                        if (textarea) {
+                            const msg = textarea.value || textarea.innerText || "";
+                            if (msg.trim().length > 0) {
+                                Android.onSendPrompt(msg);
+                            }
+                        }
                     }
                 }, true);
             })();
