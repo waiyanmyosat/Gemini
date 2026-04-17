@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/launcher_background"/>
+    <background android:drawable="@color/black"/>
     <foreground>
         <inset android:inset="15%">
             <vector android:height="24dp" android:viewportHeight="24" android:viewportWidth="24" android:width="24dp">
-                <path android:fillColor="@color/launcher_foreground" android:pathData="M12,2C12,2 12,12 2,12C12,12 12,22 12,22C12,22 12,12 22,12C12,12 12,2 12,2Z"/>
+                <path android:fillColor="#4285F4" android:pathData="M12,2C12,2 12,12 2,12C12,12 12,22 12,22C12,22 12,12 22,12C12,12 12,2 12,2Z"/>
             </vector>
         </inset>
     </foreground>
