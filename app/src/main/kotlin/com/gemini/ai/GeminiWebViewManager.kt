@@ -71,10 +71,12 @@ object GeminiWebViewManager {
             databaseEnabled = true
             allowFileAccess = true
             allowContentAccess = true
+            javaScriptCanOpenWindowsAutomatically = true
+            setSupportMultipleWindows(true)
             
             // Performance oriented resource loading
             cacheMode = WebSettings.LOAD_DEFAULT
-            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_ALWAYS
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             
             loadsImagesAutomatically = true
             blockNetworkImage = false

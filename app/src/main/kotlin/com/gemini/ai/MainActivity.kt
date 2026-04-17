@@ -129,6 +129,18 @@ class MainActivity : AppCompatActivity() {
                 }
                 return true
             }
+
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message?
+            ): Boolean {
+                val transport = resultMsg?.obj as? WebView.WebViewTransport
+                transport?.webView = view
+                resultMsg?.sendToTarget()
+                return true
+            }
         }
         
         wv.webViewClient = object : WebViewClient() {
@@ -148,10 +160,13 @@ class MainActivity : AppCompatActivity() {
                                  host.contains("youtube.com") || 
                                  host.contains("googleusercontent.com") ||
                                  host.contains("googleapis.com") ||
+                                 host.contains("google.com") ||
+                                 host.startsWith("accounts.") ||
                                  url.contains("SetSID") ||
                                  url.contains("signin") ||
                                  url.contains("ServiceLogin") ||
-                                 url.contains("/auth")
+                                 url.contains("/auth") ||
+                                 url.contains("google.com/accounts")
 
                 if (isInternal) return false 
                 
