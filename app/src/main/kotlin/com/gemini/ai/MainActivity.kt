@@ -192,30 +192,43 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.webViewClient = object : WebViewClient() {
+            private var hasRefreshedToLive = false
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
 
-                // 1. HANDLE PENDING PROMPT: If we just came from the offline file, send the message
+                // PROTOCOL: 1. Load offline instantly. 2. Refresh to live in background.
+                if (url != null && url.startsWith("file://") && !hasRefreshedToLive) {
+                    hasRefreshedToLive = true
+                    // Give the user a moment to see the instant offline UI
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
+                        webView.loadUrl("https://gemini.google.com/app")
+                    }, 500) // 500ms delay to ensure the offline page is visually "in place"
+                    return
+                }
+
+                // 2. CLEAR PENDING PROMPTS (if any were caught during the quick swap)
                 pendingPrompt?.let { prompt ->
                     val escapedText = prompt.replace("'", "\\'").replace("\n", "\\n")
                     val injectionScript = """
                         (function() {
+                            let attempts = 0;
                             function trySend() {
-                                const textarea = document.querySelector('textarea, [contenteditable="true"]');
-                                const btn = document.querySelector('button[aria-label*="Send"], button.send-button');
-                                if (textarea && (btn || document.querySelector('svg.send-icon'))) {
+                                const textarea = document.querySelector('textarea, div[contenteditable="true"], .ql-editor');
+                                const btn = document.querySelector('button[aria-label*="Send"], button[type="submit"]');
+                                
+                                if (textarea && (btn || attempts > 10)) {
                                     if (textarea.tagName === 'TEXTAREA') {
                                         textarea.value = '$escapedText';
                                     } else {
                                         textarea.innerText = '$escapedText';
                                     }
-                                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                                    textarea.dispatchEvent(new Event('change', { bubbles: true }));
-                                    setTimeout(() => {
-                                        const finalBtn = document.querySelector('button[aria-label*="Send"], button.send-button') || btn;
-                                        if (finalBtn) finalBtn.click();
-                                    }, 500);
+                                    const events = ['input', 'change', 'keydown', 'keyup', 'keypress'];
+                                    events.forEach(evt => textarea.dispatchEvent(new Event(evt, { bubbles: true })));
+                                    setTimeout(() => { if (btn) { btn.disabled = false; btn.click(); } }, 500);
                                 } else {
+                                    attempts++;
                                     setTimeout(trySend, 1000);
                                 }
                             }
@@ -226,30 +239,20 @@ class MainActivity : AppCompatActivity() {
                     pendingPrompt = null
                 }
                 
-                // 2. INJECT DETECTION: Reliable prompt detection (captured for re-injection)
+                // 3. INJECT DETECTION: Keep the bridge active for both offline and live states
                 val script = """
                     (function() {
-                        const sendSelectors = [
-                            'button[aria-label*="Send"]',
-                            'button.send-button',
-                            'svg.send-icon'
-                        ];
-                        
+                        const sendSelectors = ['button[aria-label*="Send"]', 'button.send-button', 'svg.send-icon', '.send-button-container'];
                         function getPromptText() {
-                            const textarea = document.querySelector('textarea, [contenteditable="true"]');
+                            const textarea = document.querySelector('textarea, div[contenteditable="true"], .ql-editor');
                             return textarea ? (textarea.value || textarea.innerText) : "";
                         }
-                        
                         document.addEventListener('click', function(e) {
-                            if (e.target.closest(sendSelectors.join(','))) {
-                                Android.onSendPrompt(getPromptText());
-                            }
-                        }, true);
-                        
-                        document.addEventListener('keydown', function(e) {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                const tag = e.target.tagName;
-                                if (tag === 'TEXTAREA' || e.target.getAttribute('contenteditable')) {
+                            const btn = e.target.closest(sendSelectors.join(','));
+                            if (btn) {
+                                // If the app is still in 'file://' mode during click, use the bridge
+                                if (window.location.protocol === 'file:') {
+                                    e.preventDefault();
                                     Android.onSendPrompt(getPromptText());
                                 }
                             }
