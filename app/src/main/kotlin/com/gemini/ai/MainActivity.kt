@@ -64,8 +64,14 @@ class MainActivity : AppCompatActivity() {
      * Called when the Instant Swap index.html shell is ready
      */
     fun onShellHydrated(version: String?) {
-        // Swap to the live site now that the shell is visible
-        webView.loadUrl("https://gemini.google.com/app")
+        // Swap to the intelligent hybrid layer
+        if (archiveFile.exists() && !isLoginMode) {
+            // Load the locally intercepted URL - this will be caught by shouldInterceptRequest
+            webView.loadUrl("https://gemini.google.com/app") 
+        } else {
+            // Fallback to live site if no archive exists
+            webView.loadUrl("https://gemini.google.com/app")
+        }
     }
 
     /**
@@ -169,8 +175,9 @@ class MainActivity : AppCompatActivity() {
             userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
         }
 
-        // Configure Asset Loader for internal files to avoid ERR_ACCESS_DENIED
+        // Fix for ERR_ACCESS_DENIED: Map internal files to a secure virtual domain
         assetLoader = WebViewAssetLoader.Builder()
+            .setDomain("appassets.androidplatform.net")
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/local/", WebViewAssetLoader.InternalStoragePathHandler(this, filesDir))
             .build()
@@ -181,18 +188,22 @@ class MainActivity : AppCompatActivity() {
 
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val url = request?.url?.toString() ?: return null
-                
-                // 1. Try AssetLoader (handles appassets.androidplatform.net)
+
+                // 1. Handle AssetLoader paths (Internal Assets & Storage)
                 val assetResponse = assetLoader.shouldInterceptRequest(request.url)
                 if (assetResponse != null) return assetResponse
-
-                // 2. CORE INTERCEPT: If not in login mode, serve the static Dashboard Shell
+                
+                // 2. CORE HYBRID INTERCEPT: If in "Frozen Shell" mode, serve the local MHT archive
+                // We intercept the live Gemini URL and replace it with our local data
                 if (!isLoginMode && (url.contains("gemini.google.com/app") || url == "https://gemini.google.com/")) {
                     if (archiveFile.exists()) {
                         try {
                             val fis = FileInputStream(archiveFile)
+                            // Use multipart/related for MHT files
                             return WebResourceResponse("multipart/related", "UTF-8", fis)
-                        } catch (e: Exception) { e.printStackTrace() }
+                        } catch (e: Exception) { 
+                            e.printStackTrace() 
+                        }
                     }
                 }
                 
