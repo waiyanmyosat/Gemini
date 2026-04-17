@@ -117,12 +117,16 @@ class MainActivity : AppCompatActivity() {
                 val url = request?.url?.toString() ?: return false
                 val host = request.url.host?.lowercase() ?: ""
 
-                // 1. BROAD GOOGLE AUTH FILTER: Include all domains used in the SetSID/Sign-in flow
-                val isInternal = host.contains("google.com") || 
+                // 1. ROBUST AUTH FILTER: Catch all google domains and specific login patterns
+                val isInternal = host.contains("google.") || 
                                  host.contains("gstatic.com") ||
                                  host.contains("youtube.com") || 
                                  host.contains("googleusercontent.com") ||
-                                 host.contains("googleapis.com")
+                                 host.contains("googleapis.com") ||
+                                 url.contains("SetSID") ||
+                                 url.contains("signin") ||
+                                 url.contains("ServiceLogin") ||
+                                 url.contains("/auth")
 
                 if (isInternal) return false 
                 
