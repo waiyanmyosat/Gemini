@@ -99,7 +99,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupWebView(wv: WebView) {
-        GeminiWebViewManager.configureGeminiWebView(wv)
+        GeminiWebViewManager.configureSettings(wv)
         
         wv.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {

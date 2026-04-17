@@ -21,7 +21,7 @@ object GeminiWebViewManager {
     private val executor = Executors.newSingleThreadExecutor()
 
     // -------------------------------------------------------------------------
-    // 1. PRE-CONNECT & PRERENDER
+    // 1. PRE-CONNECT & PRERENDER (Call this in your Application class or Splash)
     // -------------------------------------------------------------------------
     fun warmUp(context: Context) {
         // Pre-connect to DNS/Socket level
@@ -29,9 +29,7 @@ object GeminiWebViewManager {
             try {
                 val profile = WebViewCompat.getDefaultProfile(context)
                 profile.preconnect(Uri.parse(GEMINI_URL), 1)
-            } catch (e: Exception) {
-                // Feature check might pass but impl might fail on some devices
-            }
+            } catch (e: Exception) {}
         }
 
         // Prerender the URL in the background (Android 11+)
@@ -47,43 +45,46 @@ object GeminiWebViewManager {
                         override fun onError(error: Throwable) { /* Handle error or fallback */ }
                     }
                 )
-            } catch (e: Exception) {
-                // Fallback gracefully
-            }
+            } catch (e: Exception) {}
         }
     }
 
     // -------------------------------------------------------------------------
-    // 2. OPTIMIZED CONFIGURATION
+    // 2. OPTIMIZED CONFIGURATION (Apply to your WebView instance)
     // -------------------------------------------------------------------------
-    fun configureGeminiWebView(webView: WebView) {
-        // Enable Hardware Acceleration explicitly
+    fun configureSettings(webView: WebView) {
+        // Enable Hardware Acceleration via LayoutParams if not already in Manifest
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
-        // Session & Cookie Persistence
+        // Session & Cookie Persistence (Critical for avoiding login delays)
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
 
         webView.settings.apply {
+            // Core Performance
             javaScriptEnabled = true
-            domStorageEnabled = true
+            domStorageEnabled = true // Required for Gemini's state
             databaseEnabled = true
+            
+            // Resource Loading
+            cacheMode = WebSettings.LOAD_DEFAULT
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW // Forced for security/login stability
+            
+            // Speed up rendering
+            loadsImagesAutomatically = true
+            blockNetworkImage = false
+
+            // Standard Browser properties
+            useWideViewPort = true
+            loadWithOverviewMode = true
             allowFileAccess = true
             allowContentAccess = true
+
+            // Pop-up support
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
             
-            // Performance oriented resource loading
-            cacheMode = WebSettings.LOAD_DEFAULT
-            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            
-            loadsImagesAutomatically = true
-            blockNetworkImage = false
-            
-            // Typical mobile optimized settings
-            useWideViewPort = true
-            loadWithOverviewMode = true
             userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
         }
     }
