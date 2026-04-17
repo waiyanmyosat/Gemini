@@ -132,6 +132,7 @@ class MainActivity : AppCompatActivity() {
                 this@MainActivity.filePathCallback = filePathCallback
 
                 val intent = fileChooserParams?.createIntent()
+                if (intent == null) return false
                 try {
                     filePickerLauncher.launch(intent)
                 } catch (e: Exception) {

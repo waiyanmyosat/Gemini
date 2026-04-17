@@ -1,6 +1,6 @@
 {
   "name": "Gemini Native Android Wrapper",
   "description": "A native Kotlin Android application that wraps Gemini.google.com with official branding and GitHub Actions CI/CD support.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": []
 }
