@@ -14,6 +14,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -25,45 +26,59 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
+    private lateinit var splashOverlay: FrameLayout
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Root layout to hold WebView and ProgressBar
+        // Root layout
         val rootLayout = FrameLayout(this)
         rootLayout.id = View.generateViewId()
         
+        // 1. WebView
         webView = WebView(this)
-        // Ensure webview layout params are set for matching parent
         webView.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         )
+        // Hidden until page load starts to avoid flickering
+        webView.visibility = View.INVISIBLE 
         rootLayout.addView(webView)
         
+        // 2. Splash Overlay (for "Instant" feel)
+        splashOverlay = FrameLayout(this)
+        splashOverlay.setBackgroundColor(android.graphics.Color.WHITE)
+        splashOverlay.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
+        
+        rootLayout.addView(splashOverlay)
+        
+        // 3. Progress Bar (Subtle)
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
         progressBar.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
-            12 // Slightly taller for visibility
+            8
         )
-        progressBar.progressDrawable.setTint(resources.getColor(android.R.color.holo_blue_light, theme))
+        progressBar.progressDrawable.setTint(android.graphics.Color.parseColor("#4285F4"))
         rootLayout.addView(progressBar)
         
         setContentView(rootLayout)
 
-        // Login Persistence: Enable Persistent Cookies
+        // Persistent Login Configuration
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
 
-        // Hide status bar and navigation bars (Immersive Mode)
+        // Immersive Mode
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val windowInsetsController = WindowInsetsControllerCompat(window, rootLayout)
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
         windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-        // Fix Keyboard Overlap (Issue #1) - Using Margins instead of Padding for better compatibility
+        // Keyboard Handling
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
             val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
             val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
@@ -71,8 +86,6 @@ class MainActivity : AppCompatActivity() {
             
             val params = webView.layoutParams as FrameLayout.LayoutParams
             if (imeVisible) {
-                // When keyboard is up, we should NOT be in immersive mode for the navigation bar area
-                // to allow the keyboard to measure correctly, but here we just adjust bottom margin
                 params.bottomMargin = imeHeight
             } else {
                 params.bottomMargin = systemBars
@@ -91,18 +104,21 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             loadWithOverviewMode = true
             
-            // Performance & Persistence Optimizations
-            cacheMode = WebSettings.LOAD_DEFAULT
+            // Aggressive Caching for "Instant" feel
+            cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
             allowFileAccess = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             
-            // Modern User Agent
             userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
         }
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 progressBar.progress = newProgress
+                if (newProgress > 80) {
+                    webView.visibility = View.VISIBLE
+                    splashOverlay.visibility = View.GONE
+                }
                 progressBar.visibility = if (newProgress >= 95) View.GONE else View.VISIBLE
             }
         }
@@ -114,7 +130,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 progressBar.visibility = View.GONE
-                // Persist cookies after page load
+                webView.visibility = View.VISIBLE
+                splashOverlay.visibility = View.GONE
                 CookieManager.getInstance().flush()
             }
 
@@ -122,27 +139,33 @@ class MainActivity : AppCompatActivity() {
                 val url = request?.url?.toString() ?: return false
                 val host = request.url.host ?: ""
 
-                // Define internal domains that stay inside the app
-                // Broadened Google Login matching to catch redirections during "Next" clicks
+                // AGGRESSIVE INTERNAL CHECK: Keep everything Google Login or Gemini related inside
                 val isInternal = host.contains("gemini.google.com") || 
                                 host.contains("accounts.google") || 
                                 host.contains("myaccount.google") ||
-                                host.contains("google.com/accounts") ||
-                                url.contains("/ServiceLogin") ||
-                                url.contains("/InteractiveLogin") ||
+                                (host.contains("google.com") && (
+                                    url.contains("signin") || 
+                                    url.contains("ServiceLogin") || 
+                                    url.contains("InteractiveLogin") || 
+                                    url.contains("identifier") || 
+                                    url.contains("challenge") ||
+                                    url.contains("/auth") ||
+                                    url.contains("/AccountChooser") ||
+                                    url.contains("/v3/signin")
+                                )) ||
                                 host.endsWith("googleusercontent.com")
 
                 if (isInternal) {
-                    return false // Load in WebView
+                    return false // Stay in app
                 } else {
-                    // External link: Open in default browser
+                    // All other links open in default browser
                     try {
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         startActivity(intent)
-                        return true // WebView shouldn't load this
+                        return true
                     } catch (e: Exception) {
-                        return false // Fallback if browser can't be opened
+                        return false
                     }
                 }
             }
