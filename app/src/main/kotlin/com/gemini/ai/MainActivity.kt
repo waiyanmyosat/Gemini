@@ -27,6 +27,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private var isCacheSeeded: Boolean = false
 
     // Bridge for JS to notify Android of prompt sending
     class WebAppInterface(private val mainActivity: MainActivity) {
@@ -62,6 +63,10 @@ class MainActivity : AppCompatActivity() {
         
         setContentView(rootLayout)
 
+        // Load seeding state
+        val prefs = getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
+        isCacheSeeded = prefs.getBoolean("cache_seeded", false)
+
         // Persistence Configuration
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
@@ -94,9 +99,15 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             loadWithOverviewMode = true
             
-            // 100% OFFLINE FIRST: Start by strictly using the pre-downloaded site
-            // This prevents "Webpage not available" on start if internet is off.
-            cacheMode = WebSettings.LOAD_CACHE_ONLY
+            // 100% OFFLINE FIRST:
+            // If we have already "Seeded/Downloaded" the site in the first session,
+            // we strictly use the cache to avoid ERR_CACHE_MISS and dynamic changes.
+            if (isCacheSeeded) {
+                cacheMode = WebSettings.LOAD_CACHE_ONLY
+            } else {
+                // First session: download and seed the cache
+                cacheMode = WebSettings.LOAD_DEFAULT
+            }
             
             allowFileAccess = true
             allowContentAccess = true
@@ -111,6 +122,15 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
+
+                // If this was a successful first-time load/login, mark as "Seeded"
+                if (!isCacheSeeded && url?.contains("gemini.google.com/app") == true) {
+                    isCacheSeeded = true
+                    getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
+                        .edit()
+                        .putBoolean("cache_seeded", true)
+                        .apply()
+                }
                 
                 // Inject reliable prompt detection
                 val script = """
