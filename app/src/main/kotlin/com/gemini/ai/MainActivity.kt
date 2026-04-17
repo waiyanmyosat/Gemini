@@ -166,11 +166,23 @@ class MainActivity : AppCompatActivity() {
 
                 // 2. TRIGGER ARCHIVE: Only after successful login and dashboard load
                 if (!isCacheSeeded && url != null && url.contains("gemini.google.com/app")) {
-                    // VERIFY DASHBOARD: Check if the AI input field exists before downloading
-                    val checkScript = "document.querySelector('textarea, [contenteditable=\"true\"]') !== null"
-                    view?.evaluateJavascript(checkScript) { result ->
-                        if (result == "true") {
-                            // Wait for the heavy Gemini dashboard to fully settle (5 seconds)
+                    // PROTOCOL CHECK: Verify SID cookies (The "HTTP Success" equivalent for sessions)
+                    val cookies = CookieManager.getInstance().getCookie("https://gemini.google.com")
+                    val hasAuthCookies = cookies != null && (cookies.contains("SID=") || cookies.contains("__Secure-1PSID="))
+
+                    // DOM VERIFICATION: Check for Account Profile or Sidebar (Standard Auth confirmation)
+                    val authProtocolScript = """
+                        (function() {
+                            const hasPrompt = document.querySelector('textarea, [contenteditable="true"]') !== null;
+                            const hasProfile = document.querySelector('img[src*="googleusercontent.com"], a[href*="Logout"]') !== null;
+                            const hasSidebar = document.querySelector('nav[aria-label*="Recent"]') !== null;
+                            return hasPrompt && hasProfile && hasSidebar;
+                        })()
+                    """.trimIndent()
+                    
+                    view?.evaluateJavascript(authProtocolScript) { result ->
+                        if (result == "true" && hasAuthCookies) {
+                            // AUTHENTICATION PROTOCOL: SUCCESS (Status 200 OK)
                             Handler(Looper.getMainLooper()).postDelayed({
                                 view.saveWebArchive(archiveFile.absolutePath, false) { path ->
                                     if (path != null) {
@@ -180,12 +192,11 @@ class MainActivity : AppCompatActivity() {
                                             .putBoolean("cache_seeded", true)
                                             .apply()
                                         
-                                        val sizeKb = archiveFile.length() / 1024
                                         Toast.makeText(this@MainActivity, 
-                                            "FINAL LOGIN SUCCESS: Site Stored Locally ($sizeKb KB).\nUI is now 100% frozen.", 
+                                            "AUTHENTICATION: SUCCESS (Status 200)\nDashboard downloaded and verified.", 
                                             Toast.LENGTH_LONG).show()
                                         
-                                        // Permanently switch to the cold-loading local file
+                                        // Force into 100% Local Archive Mode
                                         view.loadUrl("file://" + archiveFile.absolutePath)
                                         view.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
                                     }
