@@ -2,13 +2,14 @@ package com.gemini.ai
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.OutcomeReceiver
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import androidx.webkit.WebViewOutcomeReceiver
 import java.util.concurrent.Executors
 
 /**
@@ -25,7 +26,8 @@ object GeminiWebViewManager {
     // -------------------------------------------------------------------------
     fun warmUp(context: Context) {
         // Pre-connect to DNS/Socket level
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.PROFILE_PRECONNECT)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
+            WebViewFeature.isFeatureSupported(WebViewFeature.PROFILE_MANAGEMENT)) {
             try {
                 val profile = WebViewCompat.getDefaultProfile(context)
                 profile.preconnect(Uri.parse(GEMINI_URL), 1)
@@ -34,15 +36,16 @@ object GeminiWebViewManager {
             }
         }
 
-        // Prerender the URL in the background (Android 11+)
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_WITH_URL)) {
+        // Prerender the URL in the background (Android 15+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
+            WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_WITH_URL)) {
             try {
                 WebViewCompat.prerenderUrlAsync(
                     context,
                     GEMINI_URL,
                     null,
                     executor,
-                    object : WebViewOutcomeReceiver<Void?, Throwable> {
+                    object : OutcomeReceiver<Void?, Throwable> {
                         override fun onResult(result: Void?) { /* Prerendering logic active */ }
                         override fun onError(error: Throwable) { /* Handle error or fallback */ }
                     }
@@ -74,7 +77,7 @@ object GeminiWebViewManager {
             
             // Performance oriented resource loading
             cacheMode = WebSettings.LOAD_DEFAULT
-            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_ALWAYS
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             
             loadsImagesAutomatically = true
             blockNetworkImage = false
