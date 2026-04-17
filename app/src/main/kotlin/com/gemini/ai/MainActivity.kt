@@ -76,24 +76,74 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun triggerPhysicalDownload() {
-        Toast.makeText(this, "Capturing HTML+CSS+JS (3s delay for settling)...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Optimizing UI for Perfect Offline Capture...", Toast.LENGTH_SHORT).show()
         
-        // Force a layout pass
-        webViewLive.evaluateJavascript("window.dispatchEvent(new Event('resize'));", null)
+        /**
+         * "Perfect Copy" Protocol:
+         * Instead of a flaky MHT, we serialize the entire DOM and INLINE all computed styles.
+         * This ensures the "skin" (CSS) is baked into the "bone" (HTML).
+         */
+        val perfectSkinScript = """
+            (function() {
+                try {
+                    // Inline all stylesheets into the head
+                    let styles = '';
+                    for (let i = 0; i < document.styleSheets.length; i++) {
+                        const sheet = document.styleSheets[i];
+                        try {
+                            const rules = sheet.cssRules || sheet.rules;
+                            for (let j = 0; j < rules.length; j++) {
+                                styles += rules[j].cssText + '\n';
+                            }
+                        } catch (e) { /* Cross-origin CSS ignored */ }
+                    }
+                    const styleTag = document.createElement('style');
+                    styleTag.innerHTML = styles;
+                    
+                    // Clone the document to sanitize
+                    const clone = document.documentElement.cloneNode(true);
+                    const cloneHead = clone.querySelector('head');
+                    
+                    // Remove external links/scripts to prevent broken relative loads
+                    cloneHead.querySelectorAll('link[rel="stylesheet"], script[src]').forEach(el => el.remove());
+                    cloneHead.appendChild(styleTag);
+                    
+                    // Force mobile viewport meta
+                    let vMeta = cloneHead.querySelector('meta[name="viewport"]');
+                    if (!vMeta) {
+                        vMeta = document.createElement('meta');
+                        vMeta.name = 'viewport';
+                        cloneHead.appendChild(vMeta);
+                    }
+                    vMeta.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+                    
+                    return '<!DOCTYPE html>\n' + clone.outerHTML;
+                } catch (e) { return 'ERROR: ' + e.message; }
+            })();
+        """.trimIndent()
         
-        // Wait 3 seconds for UI to settle (as requested in FIXED UI logic)
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (!archiveFile.parentFile!!.exists()) archiveFile.parentFile!!.mkdirs()
-            
-            webViewLive.saveWebArchive(archiveFile.absolutePath, false) { path ->
-                if (path != null) {
-                    isCacheSeeded = true
-                    getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE).edit().putBoolean("cache_seeded", true).apply()
-                    verifyButton?.visibility = View.GONE
-                    Toast.makeText(this@MainActivity, "OFFLINE SUCCESS: Every UI piece captured.", Toast.LENGTH_LONG).show()
-                }
+        webViewLive.evaluateJavascript(perfectSkinScript) { html ->
+            if (html != null && !html.startsWith("\"ERROR") && html != "null") {
+                // Decode the JSON string returned by evaluateJavascript
+                val sanitizedHtml = try {
+                    android.util.JsonReader(java.io.StringReader(html)).use { reader ->
+                        reader.nextString()
+                    }
+                } catch (e: Exception) { html }
+
+                archiveFile = File(filesDir, "gemini_perfect_v1.html")
+                archiveFile.writeText(sanitizedHtml)
+                
+                isCacheSeeded = true
+                getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE).edit().putBoolean("cache_seeded", true).apply()
+                verifyButton?.visibility = View.GONE
+                Toast.makeText(this@MainActivity, "SUCCESS: Perfect UI Capture Complete.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "Capture Failed. Retrying standard mode...", Toast.LENGTH_SHORT).show()
+                // Fallback to MHT if serialization fails (though HTML is preferred)
+                webViewLive.saveWebArchive(File(filesDir, "gemini_static_v1.mht").absolutePath, false) { _ -> }
             }
-        }, 3000)
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -104,39 +154,67 @@ class MainActivity : AppCompatActivity() {
         val rootLayout = FrameLayout(this)
         setContentView(rootLayout)
 
-        // 1. COMPACT MODE: Original hidden status bar method
+        // 1. COMPACT MODE: Restore immersive view
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val windowInsetsController = WindowInsetsControllerCompat(window, rootLayout)
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
         windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-        val folder = File(filesDir, "saved_pages")
-        if (!folder.exists()) folder.mkdirs()
-        archiveFile = File(folder, "gemini_static_v1.mht")
+        // 2. ULTRA-ROBUST KEYBOARD HANDLING: WindowInsets Listener
+        // We use adjustNothing in the manifest and manually shift the view using Insets
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
+            val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            
+            // Adjust margins based on exact IME height
+            val margin = if (imeVisible) imeHeight else 0
+            
+            val paramsLive = webViewLive.layoutParams as FrameLayout.LayoutParams
+            if (paramsLive.bottomMargin != margin) {
+                paramsLive.bottomMargin = margin
+                webViewLive.layoutParams = paramsLive
+            }
+            webViewOffline?.let { wv ->
+                val paramsOff = wv.layoutParams as FrameLayout.LayoutParams
+                if (paramsOff.bottomMargin != margin) {
+                    paramsOff.bottomMargin = margin
+                    wv.layoutParams = paramsOff
+                }
+            }
+            insets
+        }
+
+        archiveFile = File(filesDir, "gemini_perfect_v1.html")
+        val altArchive = File(filesDir, "gemini_static_v1.mht")
         val prefs = getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
         isCacheSeeded = prefs.getBoolean("cache_seeded", false)
 
         // 1. CREATE LIVE WEBVIEW
         webViewLive = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-            alpha = if (archiveFile.exists()) 0.0f else 1.0f 
+            alpha = if (archiveFile.exists() || altArchive.exists()) 0.0f else 1.0f 
         }
         rootLayout.addView(webViewLive)
         setupWebView(webViewLive)
 
         // 2. CREATE OFFLINE WEBVIEW
-        if (archiveFile.exists()) {
+        if (archiveFile.exists() || altArchive.exists()) {
             webViewOffline = WebView(this).apply {
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             }
             rootLayout.addView(webViewOffline)
             setupWebView(webViewOffline!!)
             webViewOffline?.settings?.cacheMode = WebSettings.LOAD_CACHE_ONLY
-            webViewOffline?.loadUrl("file://" + archiveFile.absolutePath)
+            
+            if (archiveFile.exists()) {
+                webViewOffline?.loadDataWithBaseURL("https://gemini.google.com", archiveFile.readText(), "text/html", "UTF-8", null)
+            } else {
+                webViewOffline?.loadUrl("file://" + altArchive.absolutePath)
+            }
         }
         
         // 3. Add Freeze Button
-        if (!isCacheSeeded && !archiveFile.exists()) {
+        if (!isCacheSeeded && !archiveFile.exists() && !altArchive.exists()) {
             verifyButton = Button(this).apply {
                 text = "FREEZE UI FOR OFFLINE"
                 layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -147,6 +225,12 @@ class MainActivity : AppCompatActivity() {
             }
             rootLayout.addView(verifyButton)
         }
+
+        // Apply Immersive Mode to the DecorView (More stable for full-screen)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         
         if (savedInstanceState == null) {
             webViewLive.loadUrl("https://gemini.google.com/app")
@@ -164,11 +248,11 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = true
             allowFileAccessFromFileURLs = true
             allowUniversalAccessFromFileURLs = true
-            setSupportZoom(true)
+            setSupportZoom(false)
             builtInZoomControls = false
             displayZoomControls = false
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36"
+            userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
         }
         
         wv.addJavascriptInterface(WebAppInterface(this), "Android")
