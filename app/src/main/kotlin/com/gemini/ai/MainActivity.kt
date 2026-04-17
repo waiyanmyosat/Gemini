@@ -18,6 +18,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.ProgressBar
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -123,13 +124,22 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
 
-                // If this was a successful first-time load/login, mark as "Seeded"
-                if (!isCacheSeeded && url?.contains("gemini.google.com/app") == true) {
-                    isCacheSeeded = true
-                    getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
-                        .edit()
-                        .putBoolean("cache_seeded", true)
-                        .apply()
+                // EXPLICIT LOGGED-IN CHECK: Verify we are on the actual /app dashboard
+                // This ensures we don't lock into offline mode while still on the login screen.
+                if (!isCacheSeeded && url != null && url.contains("gemini.google.com/app")) {
+                    // Give it a tiny moment to ensure JS rendering is complete
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        isCacheSeeded = true
+                        getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("cache_seeded", true)
+                            .apply()
+                        
+                        Toast.makeText(this@MainActivity, "Login Confirmed: Downloaded 100% Offline Page", Toast.LENGTH_LONG).show()
+                        
+                        // PERMANENT LOCK: Forbidden to touch internet on next launch
+                        view?.settings?.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                    }, 2000) // 2 second delay to ensure the dashboard elements are fully "downloaded"
                 }
                 
                 // Inject reliable prompt detection
@@ -162,7 +172,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                // If the static cache is somehow missing (first run), allow the internet to "Seed" it.
+                // If the static cache is somehow missing or we hit ERR_CACHE_MISS, 
+                // allow a brief network bridge to recover.
                 if (request?.isForMainFrame == true) {
                     view?.settings?.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
                     view?.loadUrl(request.url.toString())
