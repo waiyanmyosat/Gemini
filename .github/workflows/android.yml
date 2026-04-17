@@ -26,15 +26,14 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
       with:
+        # Specifying a version since the wrapper script (gradlew) is missing
+        gradle-version: 8.5
         # Disabling cache avoids that "400 Bad Request" error from your logs
         cache-disabled: true
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-
     - name: Build Debug APK
-      # Use ./gradlew (the wrapper) instead of the 'gradle' command
-      run: ./gradlew assembleDebug
+      # Using system 'gradle' because gradlew is not present in the repository
+      run: gradle assembleDebug
 
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
