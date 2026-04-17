@@ -19,8 +19,21 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.Toast
+import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import java.io.File
+
+// Credential Manager Imports
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.CustomCredential
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialInterruptedException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -29,9 +42,13 @@ import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private var verifyButton: Button? = null // Native button for "Proof of Success"
     private lateinit var archiveFile: File
     private var isCacheSeeded: Boolean = false
     private var pendingPrompt: String? = null
+
+    // Replace with your real Web Client ID from Google Cloud Console
+    private val GOOGLE_WEB_CLIENT_ID = "YOUR_WEB_CLIENT_ID.apps.googleusercontent.com"
 
     // Bridge for JS to notify Android of prompt sending
     class WebAppInterface(private val mainActivity: MainActivity) {
@@ -50,9 +67,81 @@ class MainActivity : AppCompatActivity() {
     fun enableNetworkAndReload(text: String) {
         pendingPrompt = text
         webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
-        // Use a flag to avoid re-triggering the archive save after a prompt refresh
+        // Use a flag to avoid re-triggering any downloads during prompt re-injection
         isCacheSeeded = true 
         webView.loadUrl("https://gemini.google.com/app")
+    }
+
+    /**
+     * NATIVE PROOF PROTOCOL:
+     * This uses the official Google Credential Manager to verify your identity.
+     * Only after this returns a valid ID Token do we trigger the 100% Download.
+     */
+    private fun performVerificationAndDownload() {
+        lifecycleScope.launch {
+            val credentialManager = CredentialManager.create(this@MainActivity)
+
+            val googleIdOption = GetGoogleIdOption.Builder()
+                .setFilterByAuthorizedAccounts(false) 
+                .setServerClientId(GOOGLE_WEB_CLIENT_ID) 
+                .setAutoSelectEnabled(true) 
+                .build()
+
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(googleIdOption)
+                .build()
+
+            try {
+                val result = credentialManager.getCredential(this@MainActivity, request)
+                val credential = result.credential
+
+                if (credential is CustomCredential && 
+                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                    
+                    val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                    val email = googleIdTokenCredential.id
+                    
+                    // 100% PROOF OF SUCCESS REACHED
+                    Toast.makeText(this@MainActivity, "AUTHENTICATED: $email", Toast.LENGTH_SHORT).show()
+                    
+                    // CRITICAL: TRIGGER SITE DOWNLOAD NOW
+                    triggerPhysicalDownload()
+                }
+            } catch (e: Exception) {
+                // Precise error handling using standard practice
+                Toast.makeText(this@MainActivity, "Verification failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun triggerPhysicalDownload() {
+        // Ensure webview is on the dashboard
+        if (webView.url?.contains("/app") != true) {
+            webView.loadUrl("https://gemini.google.com/app")
+        }
+        
+        Toast.makeText(this, "Capturing authenticated dashboard...", Toast.LENGTH_SHORT).show()
+        
+        // Wait for components to be in place
+        Handler(Looper.getMainLooper()).postDelayed({
+            webView.saveWebArchive(archiveFile.absolutePath, false) { path ->
+                if (path != null) {
+                    isCacheSeeded = true
+                    getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
+                        .edit()
+                        .putBoolean("cache_seeded", true)
+                        .apply()
+                    
+                    verifyButton?.visibility = View.GONE
+                    
+                    Toast.makeText(this@MainActivity, "SUCCESS: Website Frozen Offline.", Toast.LENGTH_LONG).show()
+                    
+                    // LOCK TO LOCAL
+                    webView.loadUrl("file://" + archiveFile.absolutePath)
+                    webView.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                }
+            }
+        }, 5000)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -68,6 +157,23 @@ class MainActivity : AppCompatActivity() {
         )
         webView.visibility = View.VISIBLE 
         rootLayout.addView(webView)
+        
+        // Add Native Verification Button if not seeded
+        if (!isCacheSeeded) {
+            val btn = Button(this).apply {
+                text = "VERIFY & DOWNLOAD OFFLINE SITE"
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
+                    setMargins(0, 0, 0, 100)
+                }
+                setOnClickListener { performVerificationAndDownload() }
+            }
+            verifyButton = btn
+            rootLayout.addView(btn)
+        }
         
         setContentView(rootLayout)
 
@@ -163,50 +269,8 @@ class MainActivity : AppCompatActivity() {
                     view?.evaluateJavascript(injectionScript, null)
                     pendingPrompt = null
                 }
-
-                // 2. TRIGGER ARCHIVE: Only after successful login and dashboard load
-                if (!isCacheSeeded && url != null && url.contains("gemini.google.com/app")) {
-                    // PROTOCOL CHECK: Verify SID cookies (The "HTTP Success" equivalent for sessions)
-                    val cookies = CookieManager.getInstance().getCookie("https://gemini.google.com")
-                    val hasAuthCookies = cookies != null && (cookies.contains("SID=") || cookies.contains("__Secure-1PSID="))
-
-                    // DOM VERIFICATION: Check for Account Profile or Sidebar (Standard Auth confirmation)
-                    val authProtocolScript = """
-                        (function() {
-                            const hasPrompt = document.querySelector('textarea, [contenteditable="true"]') !== null;
-                            const hasProfile = document.querySelector('img[src*="googleusercontent.com"], a[href*="Logout"]') !== null;
-                            const hasSidebar = document.querySelector('nav[aria-label*="Recent"]') !== null;
-                            return hasPrompt && hasProfile && hasSidebar;
-                        })()
-                    """.trimIndent()
-                    
-                    view?.evaluateJavascript(authProtocolScript) { result ->
-                        if (result == "true" && hasAuthCookies) {
-                            // AUTHENTICATION PROTOCOL: SUCCESS (Status 200 OK)
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                view.saveWebArchive(archiveFile.absolutePath, false) { path ->
-                                    if (path != null) {
-                                        isCacheSeeded = true
-                                        getSharedPreferences("gemini_offline_prefs", MODE_PRIVATE)
-                                            .edit()
-                                            .putBoolean("cache_seeded", true)
-                                            .apply()
-                                        
-                                        Toast.makeText(this@MainActivity, 
-                                            "AUTHENTICATION: SUCCESS (Status 200)\nDashboard downloaded and verified.", 
-                                            Toast.LENGTH_LONG).show()
-                                        
-                                        // Force into 100% Local Archive Mode
-                                        view.loadUrl("file://" + archiveFile.absolutePath)
-                                        view.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
-                                    }
-                                }
-                            }, 5000)
-                        }
-                    }
-                }
                 
-                // 3. INJECT DETECTION: Reliable prompt detection (captured for re-injection)
+                // 2. INJECT DETECTION: Reliable prompt detection (captured for re-injection)
                 val script = """
                     (function() {
                         const sendSelectors = [
