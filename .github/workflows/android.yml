@@ -40,25 +40,9 @@ jobs:
         alias: ${{ secrets.ALIAS }}
         keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
         keyPassword: ${{ secrets.KEY_PASSWORD }}
-        # Manually specify the build tools version to avoid the 'not found' error
-        buildToolsVersion: "34.0.0"
-
-    - name: Upload Signed Optimized APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: gemini-ai-extreme-release
-        path: ${{ steps.sign_app.outputs.signedReleaseFile }}name: Android CI
-
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-ingKeyBase64: ${{ secrets.SIGNING_KEY }}
-        alias: ${{ secrets.ALIAS }}
-        keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-        keyPassword: ${{ secrets.KEY_PASSWORD }}
+      # This env block is the standard way to fix the 'build-tools' path error
+      env:
+        BUILD_TOOLS_VERSION: "34.0.0"
 
     - name: Upload Signed Optimized APK
       uses: actions/upload-artifact@v4
