@@ -11,7 +11,6 @@ env:
 
 jobs:
   build:
-    # Fix: Corrected the typo from 'runs-runs-on' to 'runs-on'
     runs-on: ubuntu-latest
 
     steps:
@@ -38,6 +37,25 @@ jobs:
       with:
         releaseDirectory: app/build/outputs/apk/release
         signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+        alias: ${{ secrets.ALIAS }}
+        keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+        keyPassword: ${{ secrets.KEY_PASSWORD }}
+        # Manually specify the build tools version to avoid the 'not found' error
+        buildToolsVersion: "34.0.0"
+
+    - name: Upload Signed Optimized APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: gemini-ai-extreme-release
+        path: ${{ steps.sign_app.outputs.signedReleaseFile }}name: Android CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+ingKeyBase64: ${{ secrets.SIGNING_KEY }}
         alias: ${{ secrets.ALIAS }}
         keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
         keyPassword: ${{ secrets.KEY_PASSWORD }}
