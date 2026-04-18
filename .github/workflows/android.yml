@@ -38,10 +38,8 @@ jobs:
         alias: ${{ secrets.ALIAS }}
         keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
         keyPassword: ${{ secrets.KEY_PASSWORD }}
-      env:
-        # 33.0.2 is the most stable version for signing keys created in OpenJDK 17
-        BUILD_TOOLS_VERSION: "33.0.2"
-
+      # REMOVED the fixed BUILD_TOOLS_VERSION to let the action auto-detect
+      
     - name: Upload Signed APK
       uses: actions/upload-artifact@v4
       with:
