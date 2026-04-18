@@ -23,6 +23,10 @@ jobs:
       with:
         gradle-version: 8.9
 
+    - name: Install Android Build Tools
+      run: |
+        echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "build-tools;34.0.0"
+
     - name: Make Gradlew Executable
       run: chmod +x gradlew
 
@@ -38,8 +42,9 @@ jobs:
         alias: ${{ secrets.ALIAS }}
         keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
         keyPassword: ${{ secrets.KEY_PASSWORD }}
-      # REMOVED the fixed BUILD_TOOLS_VERSION to let the action auto-detect
-      
+      env:
+        BUILD_TOOLS_VERSION: "34.0.0"
+
     - name: Upload Signed APK
       uses: actions/upload-artifact@v4
       with:
