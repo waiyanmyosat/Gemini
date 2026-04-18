@@ -6,6 +6,7 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# Use Node 24 to avoid the deprecation errors
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -14,9 +15,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
     
-    - name: set up JDK 17
+    - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
@@ -26,9 +28,11 @@ jobs:
       uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: 8.9
+        # Disabling cache avoids the "400 Bad Request" error
         cache-disabled: true
 
     - name: Build Optimized Release APK
+      # This task triggers the R8/Minify optimizations set in build.gradle
       run: gradle assembleRelease
 
     - name: Sign Release APK
@@ -40,12 +44,15 @@ jobs:
         alias: ${{ secrets.ALIAS }}
         keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
         keyPassword: ${{ secrets.KEY_PASSWORD }}
-      # This env block is the standard way to fix the 'build-tools' path error
       env:
+        # Standardize build tools to ensure zipalign and apksigner are found
         BUILD_TOOLS_VERSION: "34.0.0"
 
     - name: Upload Signed Optimized APK
       uses: actions/upload-artifact@v4
       with:
         name: gemini-ai-extreme-release
-        path: ${{ steps.sign_app.outputs.signedReleaseFile }}
+        # Using a wildcard ensures it catches the signed APK even if renamed
+        path: app/build/outputs/apk/release/*.apk
+        # If the build fails to produce an APK, the job will error out here
+        if-no-files-found: error
