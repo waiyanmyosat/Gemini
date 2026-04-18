@@ -2,8 +2,6 @@ package com.gemini.ai
 
 import android.content.Context
 import android.net.Uri
-import android.os.Build
-import android.os.OutcomeReceiver
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebSettings
@@ -19,40 +17,19 @@ import java.util.concurrent.Executors
 object GeminiWebViewManager {
 
     private const val GEMINI_URL = "https://gemini.google.com/app"
-    private val executor = Executors.newSingleThreadExecutor()
 
     // -------------------------------------------------------------------------
-    // 1. PRE-CONNECT & PRERENDER
+    // 1. ENGINE WARM-UP (STABLE)
     // -------------------------------------------------------------------------
     fun warmUp(context: Context) {
-        // Pre-connect to DNS/Socket level
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
-            WebViewFeature.isFeatureSupported(WebViewFeature.PROFILE_MANAGEMENT)) {
-            try {
-                val profile = WebViewCompat.getDefaultProfile(context)
-                profile.preconnect(Uri.parse(GEMINI_URL), 1)
-            } catch (e: Exception) {
-                // Feature check might pass but impl might fail on some devices
-            }
-        }
-
-        // Prerender the URL in the background (Android 15+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
-            WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_WITH_URL)) {
-            try {
-                WebViewCompat.prerenderUrlAsync(
-                    context,
-                    GEMINI_URL,
-                    null,
-                    executor,
-                    object : OutcomeReceiver<Void?, Throwable> {
-                        override fun onResult(result: Void?) { /* Prerendering logic active */ }
-                        override fun onError(error: Throwable) { /* Handle error or fallback */ }
-                    }
-                )
-            } catch (e: Exception) {
-                // Fallback gracefully
-            }
+        // Instantiate a WebView on the main thread (or early enough) 
+        // to force the Chromium engine to initialize.
+        try {
+            // This is a common pattern to trigger WebView initialization 
+            // without showing anything.
+            WebView(context).destroy()
+        } catch (e: Exception) {
+            // Silently fail if initialization fails
         }
     }
 
