@@ -1,14 +1,8 @@
-name: Android CI
+name: Android CI - Final
 
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-# Use Node 24 to avoid the deprecation errors
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -28,14 +22,11 @@ jobs:
       uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: 8.9
-        # Disabling cache avoids the "400 Bad Request" error
-        cache-disabled: true
 
-    - name: Build Optimized Release APK
-      # This task triggers the R8/Minify optimizations set in build.gradle
-      run: gradle assembleRelease
+    - name: Build Release APK
+      run: ./gradlew assembleRelease
 
-    - name: Sign Release APK
+    - name: Sign Android Release
       uses: r0adkll/sign-android-release@v1
       id: sign_app
       with:
@@ -45,14 +36,11 @@ jobs:
         keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
         keyPassword: ${{ secrets.KEY_PASSWORD }}
       env:
-        # Standardize build tools to ensure zipalign and apksigner are found
-        BUILD_TOOLS_VERSION: "34.0.0"
+        # 33.0.2 is the most stable version for signing keys created in OpenJDK 17
+        BUILD_TOOLS_VERSION: "33.0.2"
 
-    - name: Upload Signed Optimized APK
+    - name: Upload Signed APK
       uses: actions/upload-artifact@v4
       with:
-        name: gemini-ai-extreme-release
-        # Using a wildcard ensures it catches the signed APK even if renamed
-        path: app/build/outputs/apk/release/*.apk
-        # If the build fails to produce an APK, the job will error out here
-        if-no-files-found: error
+        name: Signed-Release-App
+        path: ${{ steps.sign_app.outputs.signedReleaseFile }}
