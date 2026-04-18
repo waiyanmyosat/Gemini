@@ -23,6 +23,9 @@ jobs:
       with:
         gradle-version: 8.9
 
+    - name: Make Gradlew Executable
+      run: chmod +x gradlew
+
     - name: Build Release APK
       run: ./gradlew assembleRelease
 
@@ -42,5 +45,5 @@ jobs:
     - name: Upload Signed APK
       uses: actions/upload-artifact@v4
       with:
-        name: Signed-Release-App
+        name: Gemini-Signed-App
         path: ${{ steps.sign_app.outputs.signedReleaseFile }}
