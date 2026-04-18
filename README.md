@@ -1,32 +1,17 @@
-# Gemini Native Android Wrapper
+# Gemini Native View (Kotlin)
 
-A native Kotlin Android application that wraps `Gemini.google.com` with official branding and modern Android practices.
+An optimized **arm64 Android 16** web-native app built with Kotlin. 
 
-## Features
-- **Android 16 Support**: Targeting API 36 (Baklava).
-- **Architecture**: Optimized for `arm64-v8a`.
-- **WebView Integration**: High-performance WebView with JS and DOM storage enabled.
-- **CI/CD**: Ready-to-use GitHub Actions workflow for automated APK generation.
-- **Official Branding**: Uses Gemini-inspired colors and icons.
+### Features
+* **Google Play Services Independent:** Designed for users who want to use Gemini without relying on the official Google app or background Play Services.
+* **Lightweight:** Minimal overhead compared to the standard Google app.
+* **Android 16 Ready:** Targetting the latest API standards for 2026.
+* **Privacy Focused:** Runs in a clean Webview environment.
 
-## Project Structure
-- `app/`: Main Android module.
-- `.github/workflows/`: CI/CD configuration.
-- `gradle/`: Gradle wrapper and configuration.
+### Installation
+1. Download the latest APK from the **Releases** or **Actions** tab.
+2. Sign the APK (if using the unsigned build).
+3. Install on any arm64 Android device.
 
-## How to Build
-1. **Local Build**:
-   - Open the project in Android Studio.
-   - Run `./gradlew assembleDebug` to generate a debug APK.
-2. **GitHub Actions**:
-   - Push this repository to GitHub.
-   - Go to the **Actions** tab to see the build progress.
-   - Once finished, download the APK from the **Artifacts** section of the build summary.
-
-## Configuration
-- **Package Name**: `com.gemini.ai`
-- **Minimum SDK**: 26 (Android 8.0)
-- **Target SDK**: 36 (Android 16)
-
-## License
-Apache-2.0
+---
+*Built for speed and independence.*
