@@ -11,7 +11,8 @@ env:
 
 jobs:
   build:
-    runs-runs-on: ubuntu-latest
+    # Fix: Corrected the typo from 'runs-runs-on' to 'runs-on'
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -29,7 +30,6 @@ jobs:
         cache-disabled: true
 
     - name: Build Optimized Release APK
-      # Runs the release task which triggers R8/Proguard optimization
       run: gradle assembleRelease
 
     - name: Sign Release APK
