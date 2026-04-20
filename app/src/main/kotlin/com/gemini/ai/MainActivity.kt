@@ -6,17 +6,13 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
-import android.webkit.CookieManager
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.webkit.*
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : AppCompatActivity() {
@@ -25,14 +21,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
-    // Handle file uploads (images/docs) within Gemini
     private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
-            filePathCallback?.onReceiveValue(uris)
-        } else {
-            filePathCallback?.onReceiveValue(null)
-        }
+        val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+        filePathCallback?.onReceiveValue(uris)
         filePathCallback = null
     }
 
@@ -40,39 +31,41 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Ensure the layout doesn't crawl under the status bar
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        
         val rootLayout = FrameLayout(this)
         setContentView(rootLayout)
 
-        // Keyboard Handling: Shifts the WebView up when the IME appears
-        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
-            val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
-            val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-            val margin = if (imeVisible) imeHeight else 0
-            
-            val paramsLive = webViewLive.layoutParams as FrameLayout.LayoutParams
-            if (paramsLive.bottomMargin != margin) {
-                paramsLive.bottomMargin = margin
-                webViewLive.layoutParams = paramsLive
-            }
-            insets
-        }
-
-        // Initialize WebView
         webViewLive = WebView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-            visibility = android.view.View.INVISIBLE 
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, 
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
         }
         rootLayout.addView(webViewLive)
 
-        // Progress Bar
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 8).apply {
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 12).apply {
                 gravity = android.view.Gravity.TOP
             }
-            max = 100
             visibility = android.view.View.GONE
         }
         rootLayout.addView(progressBar)
+
+        // Fix the overlap (Padding at top for Status Bar, Margin at bottom for Keyboard)
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
+            val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            
+            view.setPadding(0, statusBars.top, 0, 0)
+            
+            val params = webViewLive.layoutParams as FrameLayout.LayoutParams
+            params.bottomMargin = ime.bottom
+            webViewLive.layoutParams = params
+            
+            insets
+        }
 
         setupWebView(webViewLive)
 
@@ -88,56 +81,48 @@ class MainActivity : AppCompatActivity() {
         
         wv.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                progressBar.visibility = if (newProgress < 100) android.view.View.VISIBLE else android.view.View.GONE
                 progressBar.progress = newProgress
+                progressBar.visibility = if (newProgress < 100) android.view.View.VISIBLE else android.view.View.GONE
             }
 
-            override fun onShowFileChooser(
-                webView: WebView?,
-                filePathCallback: ValueCallback<Array<Uri>>?,
-                fileChooserParams: FileChooserParams?
-            ): Boolean {
-                this@MainActivity.filePathCallback?.onReceiveValue(null)
-                this@MainActivity.filePathCallback = filePathCallback
-                val intent = fileChooserParams?.createIntent() ?: return false
-                try {
-                    filePickerLauncher.launch(intent)
-                } catch (e: Exception) {
-                    this@MainActivity.filePathCallback = null
-                    return false
-                }
+            override fun onShowFileChooser(view: WebView?, callback: ValueCallback<Array<Uri>>?, params: FileChooserParams?): Boolean {
+                filePathCallback = callback
+                filePickerLauncher.launch(params?.createIntent())
                 return true
             }
         }
         
         wv.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                CookieManager.getInstance().flush()
-                wv.visibility = android.view.View.VISIBLE
-            }
-
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val url = request?.url?.toString() ?: return false
-                val host = request.url.host?.lowercase() ?: ""
+                val uri = request?.url ?: return false
+                val url = uri.toString()
+                val host = uri.host?.lowercase() ?: ""
 
-                // ALLOWLIST: Only these stay inside the App
-                val isLogin = host == "accounts.google.com"
-                val isGemini = host == "gemini.google.com"
-                val isYoutubeAuth = host == "accounts.youtube.com" && url.contains("SetSID")
+                // THE BROADER LOGIN FILTER
+                // This catches gemini, accounts, and the youtube/myaccount session handovers
+                val isInternal = host.contains("gemini.google.com") || 
+                                 host.contains("accounts.google.com") ||
+                                 host.contains("accounts.youtube.com") ||
+                                 host.contains("myaccount.google.com") ||
+                                 url.contains("SetSID")
 
-                return if (isLogin || isGemini || isYoutubeAuth) {
-                    false // Load in WebView
+                return if (isInternal) {
+                    false // LOAD INTERNALLY (This fixes the logout/redirect loop)
                 } else {
-                    // EXTERNAL: Redirect everything else to System Browser
+                    // EXTERNAL: Open actual links/sources in the browser
                     try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        val intent = Intent(Intent.ACTION_VIEW, uri)
                         startActivity(intent)
-                        true 
+                        true
                     } catch (e: Exception) {
-                        false 
+                        false
                     }
                 }
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                // Critical for keeping the session active
+                CookieManager.getInstance().flush()
             }
         }
     }
@@ -149,9 +134,4 @@ class MainActivity : AppCompatActivity() {
         }
         return super.onKeyDown(keyCode, event)
     }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        webViewLive.saveState(outState)
-    }
-}
+} 
