@@ -40,9 +40,8 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = Color.TRANSPARENT
 
         rootLayout = FrameLayout(this)
-        // Initial fallback color based on system
-        val isDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        rootLayout.setBackgroundColor(if (isDark) Color.BLACK else Color.WHITE)
+        // Set initial background based on current system theme
+        syncBackgroundToSystem()
         setContentView(rootLayout)
 
         webViewLive = WebView(this).apply {
@@ -50,8 +49,7 @@ class MainActivity : AppCompatActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
-            // Make WebView transparent so rootLayout color shows through while loading
-            setBackgroundColor(Color.TRANSPARENT)
+            setBackgroundColor(Color.TRANSPARENT) // Let rootLayout show through
         }
         rootLayout.addView(webViewLive)
 
@@ -63,7 +61,7 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(progressBar)
 
-        // 2. Native Inset Management (0ms Content Offset)
+        // 2. Native Inset Management (0ms Offset)
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
             val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
@@ -89,10 +87,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // 3. THIS HANDLES QUICK SETTINGS TOGGLE (NO RESTART)
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        syncBackgroundToSystem()
+        // Trigger JS to check theme again in case website changed color too
+        webViewLive.evaluateJavascript("if(typeof sendColor === 'function') sendColor();", null)
+    }
+
+    private fun syncBackgroundToSystem() {
+        val isDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        // Gemini's specific dark hex is #131313
+        val color = if (isDark) Color.parseColor("#131313") else Color.WHITE
+        updateSystemUI(color)
+    }
+
     private fun setupWebView(wv: WebView) {
         GeminiWebViewManager.configureGeminiWebView(wv)
 
-        // 3. Real-time Bridge (Crucial for "No Restart" Sync)
         wv.addJavascriptInterface(object {
             @JavascriptInterface
             fun onColorDetected(rgbStr: String) {
@@ -109,13 +121,7 @@ class MainActivity : AppCompatActivity() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 progressBar.progress = newProgress
                 progressBar.visibility = if (newProgress < 100) View.VISIBLE else View.GONE
-                // Inject early and often to catch theme changes
-                if (newProgress > 10) injectColorDetector(view)
-            }
-            override fun onShowFileChooser(view: WebView?, cb: ValueCallback<Array<Uri>>?, p: FileChooserParams?): Boolean {
-                filePathCallback = cb
-                filePickerLauncher.launch(p?.createIntent())
-                return true
+                if (newProgress > 15) injectColorDetector(view)
             }
         }
 
@@ -129,16 +135,13 @@ class MainActivity : AppCompatActivity() {
     private fun injectColorDetector(view: WebView?) {
         val script = """
             (function() {
-                var lastDetectedColor = "";
-                function sendColor() {
+                window.sendColor = function() {
                     var bg = window.getComputedStyle(document.body).backgroundColor;
-                    if (bg && bg !== lastDetectedColor && bg !== 'rgba(0, 0, 0, 0)') {
-                        lastDetectedColor = bg;
+                    if (bg && bg !== 'rgba(0, 0, 0, 0)') {
                         ColorBridge.onColorDetected(bg);
                     }
-                }
+                };
                 sendColor();
-                // This observer watches for class changes on the HTML tag (Gemini's dark mode trigger)
                 new MutationObserver(sendColor).observe(document.documentElement, { 
                     attributes: true, 
                     attributeFilter: ['class', 'style', 'data-theme'] 
@@ -149,17 +152,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateSystemUI(bgColor: Int) {
-        // 4. Update Native Background (0ms sync)
         rootLayout.setBackgroundColor(bgColor)
         
-        // 5. Luminance Detection for Icon Visibility
+        // Luminance Detection for Icon Contrast
         val r = Color.red(bgColor)
         val g = Color.green(bgColor)
         val b = Color.blue(bgColor)
         val luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
         
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        // If site is Light (high luminance), set Dark Icons. Else set White Icons.
         controller.isAppearanceLightStatusBars = (luminance > 0.5)
     }
 
@@ -167,10 +168,7 @@ class MainActivity : AppCompatActivity() {
         val values = rgb.replace("rgb", "").replace("a", "")
                         .replace("(", "").replace(")", "")
                         .split(",")
-        val r = values[0].trim().toInt()
-        val g = values[1].trim().toInt()
-        val b = values[2].trim().toInt()
-        return Color.rgb(r, g, b)
+        return Color.rgb(values[0].trim().toInt(), values[1].trim().toInt(), values[2].trim().toInt())
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -180,4 +178,4 @@ class MainActivity : AppCompatActivity() {
         }
         return super.onKeyDown(keyCode, event)
     }
-} 
+}
