@@ -45,7 +45,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge() // Standard Edge-to-Edge API
+        enableEdgeToEdge() // Standard Edge-to-Edge
         super.onCreate(savedInstanceState)
         
         val rootLayout = FrameLayout(this)
@@ -66,24 +66,23 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(progressBar)
 
-        // UI FIX: Use padding to keep content below battery icon, but background seamless
+        // UI FIX: Apply top padding to webview so content clears status bar icons
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
-            val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
             val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
             val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
 
-            // Progress bar stays right under status bar icons
             val progressParams = progressBar.layoutParams as FrameLayout.LayoutParams
             progressParams.topMargin = statusBars.top
             progressBar.layoutParams = progressParams
 
-            // WEBVIEW UI FIX: Padding keeps content safe, Margin 0 keeps color seamless
+            // THIS FIXES THE OVERLAP IN YOUR SCREENSHOT
             webViewLive.setPadding(0, statusBars.top, 0, 0)
             
             val webParams = webViewLive.layoutParams as FrameLayout.LayoutParams
             webParams.topMargin = 0 
-            webParams.bottomMargin = if (imeVisible) imeHeight else navBars.bottom
+            webParams.bottomMargin = if (imeVisible) imeHeight else systemBars.bottom
             webViewLive.layoutParams = webParams
 
             insets
@@ -145,8 +144,8 @@ class MainActivity : AppCompatActivity() {
                 CookieManager.getInstance().flush()
                 wv.visibility = View.VISIBLE
 
-                // Fix for the 'SetOSID' finish loop
-                if (url != null && (url.contains("myaccount.google.com") && !url.contains("SetOSID"))) {
+                // REDIRECT FIX: If stuck on YouTube SetSID or MyAccount, kick back to Gemini
+                if (url != null && (url.contains("myaccount.google.com") || url.contains("accounts.youtube.com")) && !url.contains("SetSID") && !url.contains("SetOSID")) {
                     wv.loadUrl("https://gemini.google.com/app")
                 }
             }
@@ -155,16 +154,17 @@ class MainActivity : AppCompatActivity() {
                 val url = request?.url?.toString() ?: return false
                 val host = request.url.host?.lowercase() ?: ""
 
-                // 1. DOMAIN CHECK: Keep Google Auth strictly inside
-                val isInternal = host.contains("google.com") || 
-                                 host.contains("gstatic.com") || 
-                                 host.contains("googleapis.com")
+                // THE FIX: Allow ALL google/youtube auth domains to remain internal
+                val isInternalAuth = host.contains("google.com") || 
+                                     host.contains("youtube.com") || 
+                                     host.contains("gstatic.com") || 
+                                     host.contains("googleapis.com")
 
-                if (isInternal) {
-                    return false // Let WebView handle it
+                if (isInternalAuth) {
+                    return false 
                 }
 
-                // 2. INTENT & EXTERNAL REDIRECT: Everything else goes to specific apps
+                // Handle other app intents (External apps)
                 try {
                     val intent = if (url.startsWith("intent://")) {
                         Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
@@ -172,20 +172,18 @@ class MainActivity : AppCompatActivity() {
                         Intent(Intent.ACTION_VIEW, Uri.parse(url))
                     }
 
-                    // Try to find the specific app on the system
                     if (intent.resolveActivity(packageManager) != null) {
                         startActivity(intent)
                         return true
                     }
                     
-                    // Fallback for intent links if app is missing
                     val fallbackUrl = intent.getStringExtra("browser_fallback_url")
                     if (fallbackUrl != null) {
                         view?.loadUrl(fallbackUrl)
                         return true
                     }
                 } catch (e: Exception) {
-                    return false 
+                    return false
                 }
                 return false
             }
@@ -198,10 +196,5 @@ class MainActivity : AppCompatActivity() {
             return true
         }
         return super.onKeyDown(keyCode, event)
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        webViewLive.saveState(outState)
     }
 } 
