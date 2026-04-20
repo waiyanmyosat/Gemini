@@ -1,170 +1,264 @@
 package com.gemini.ai
 
+
+
 import android.annotation.SuppressLint
-import android.app.Activity
-import android.content.Intent
+
+import android.content.res.Configuration
+
 import android.graphics.Color
-import android.net.Uri
+
 import android.os.Bundle
+
 import android.view.KeyEvent
-import android.webkit.CookieManager
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
+
+import android.view.Gravity
+
+import android.webkit.*
+
 import android.widget.FrameLayout
-import android.widget.ProgressBar
-import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.appcompat.app.AppCompatActivity
+
 import androidx.core.view.ViewCompat
+
 import androidx.core.view.WindowCompat
+
 import androidx.core.view.WindowInsetsCompat
+
+
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webViewLive: WebView
-    private lateinit var progressBar: ProgressBar
-    private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
-    private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
-            filePathCallback?.onReceiveValue(uris)
-        } else {
-            filePathCallback?.onReceiveValue(null)
-        }
-        filePathCallback = null
-    }
+    private lateinit var rootLayout: FrameLayout
+
+
 
     @SuppressLint("SetJavaScriptEnabled")
+
     override fun onCreate(savedInstanceState: Bundle?) {
+
         super.onCreate(savedInstanceState)
 
-        // 1. Enable Edge-to-Edge display
+
+
+        // 1. Force the Window to be Edge-to-Edge and Transparent
+
         WindowCompat.setDecorFitsSystemWindows(window, false)
+
         window.statusBarColor = Color.TRANSPARENT
 
-        val rootLayout = FrameLayout(this)
+
+
+        rootLayout = FrameLayout(this)
+
         setContentView(rootLayout)
 
-        // 2. Initialize UI Components
-        webViewLive = WebView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, 
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-            visibility = android.view.View.INVISIBLE 
-        }
 
-        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 8).apply {
-                gravity = android.view.Gravity.TOP
-            }
-            max = 100
-            visibility = android.view.View.GONE
+
+        webViewLive = WebView(this).apply {
+
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
+
+            setBackgroundColor(Color.TRANSPARENT) // Essential for 0ms color bleed
+
         }
 
         rootLayout.addView(webViewLive)
-        rootLayout.addView(progressBar)
 
-        // 3. Handle Insets (Status Bar & Keyboard)
-        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
 
-            // Apply Top Padding to avoid Status Bar overlap
-            view.setPadding(systemBars.left, systemBars.top, systemBars.right, 0)
 
-            // Apply Bottom Margin to handle Navigation Bar and Keyboard
-            val params = webViewLive.layoutParams as FrameLayout.LayoutParams
-            val bottomPadding = if (ime.bottom > 0) ime.bottom else systemBars.bottom
-            
-            if (params.bottomMargin != bottomPadding) {
-                params.bottomMargin = bottomPadding
-                webViewLive.layoutParams = params
+        // Physical Layout Sync (0ms Space Reservation)
+
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
+
+            val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+
+            webViewLive.layoutParams = (webViewLive.layoutParams as FrameLayout.LayoutParams).apply {
+
+                topMargin = statusBars.top
+
+                bottomMargin = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+
             }
 
             insets
+
         }
+
+
 
         setupWebView(webViewLive)
 
-        if (savedInstanceState == null) {
-            webViewLive.loadUrl("https://gemini.google.com/app")
-        } else {
-            webViewLive.restoreState(savedInstanceState)
-        }
+        if (savedInstanceState == null) webViewLive.loadUrl("https://gemini.google.com/app")
+
     }
+
+
+
+    // 2. THE TRIGGER: Detects System Tile Toggle Instantly
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+
+        super.onConfigurationChanged(newConfig)
+
+        // Shouts at the website: "The system changed, tell me your color NOW!"
+
+        webViewLive.evaluateJavascript("if(window.syncColor) window.syncColor();", null)
+
+    }
+
+
 
     private fun setupWebView(wv: WebView) {
-        // Ensure GeminiWebViewManager is defined in your project
+
         GeminiWebViewManager.configureGeminiWebView(wv)
+
         
+
+        // The Bridge: Receives real-time color updates
+
+        wv.addJavascriptInterface(object {
+
+            @JavascriptInterface
+
+            fun onColorDetected(rgbStr: String) {
+
+                runOnUiThread { try { updateStatusBar(parseRgb(rgbStr)) } catch (e: Exception) {} }
+
+            }
+
+        }, "ColorBridge")
+
+
+
         wv.webChromeClient = object : WebChromeClient() {
+
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                progressBar.visibility = if (newProgress < 100) android.view.View.VISIBLE else android.view.View.GONE
-                progressBar.progress = newProgress
+
+                if (newProgress > 10) injectRealTimeListener(view)
+
             }
 
-            override fun onShowFileChooser(
-                webView: WebView?,
-                filePathCallback: ValueCallback<Array<Uri>>?,
-                fileChooserParams: FileChooserParams?
-            ): Boolean {
-                this@MainActivity.filePathCallback?.onReceiveValue(null)
-                this@MainActivity.filePathCallback = filePathCallback
-                val intent = fileChooserParams?.createIntent() ?: return false
-                try {
-                    filePickerLauncher.launch(intent)
-                } catch (e: Exception) {
-                    this@MainActivity.filePathCallback = null
-                    return false
-                }
-                return true
-            }
         }
-        
+
         wv.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                CookieManager.getInstance().flush()
-                wv.visibility = android.view.View.VISIBLE
-            }
 
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val url = request?.url?.toString() ?: return false
-                val host = request.url.host?.lowercase() ?: ""
+            override fun onPageFinished(view: WebView?, url: String?) { injectRealTimeListener(view) }
 
-                val isLogin = host == "accounts.google.com"
-                val isGemini = host == "gemini.google.com"
-                val isYoutubeAuth = host == "accounts.youtube.com" && url.contains("SetSID")
-
-                return if (isLogin || isGemini || isYoutubeAuth) {
-                    false 
-                } else {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(intent)
-                        true 
-                    } catch (e: Exception) {
-                        false 
-                    }
-                }
-            }
         }
+
     }
+
+
+
+    private fun injectRealTimeListener(view: WebView?) {
+
+        val script = """
+
+            (function() {
+
+                if (window.isListening) return;
+
+                window.isListening = true;
+
+
+
+                window.syncColor = function() {
+
+                    var bg = window.getComputedStyle(document.body).backgroundColor;
+
+                    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+
+                        ColorBridge.onColorDetected(bg);
+
+                    }
+
+                };
+
+
+
+                // 1. Listen for DOM changes (Theme toggles)
+
+                new MutationObserver(window.syncColor).observe(document.documentElement, { 
+
+                    attributes: true, attributeFilter: ['class', 'style', 'data-theme'] 
+
+                });
+
+
+
+                // 2. Continuous Polling (The 0ms "Always Listening" Safety Net)
+
+                // Checks every 100ms to ensure the status bar never falls behind
+
+                setInterval(window.syncColor, 100);
+
+                
+
+                window.syncColor();
+
+            })();
+
+        """.trimIndent()
+
+        view?.evaluateJavascript(script, null)
+
+    }
+
+
+
+    private fun updateStatusBar(bgColor: Int) {
+
+        // Change native background instantly
+
+        rootLayout.setBackgroundColor(bgColor)
+
+        
+
+        // Instant Icon Contrast Flip (Luminance check)
+
+        val r = Color.red(bgColor); val g = Color.green(bgColor); val b = Color.blue(bgColor)
+
+        val luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+
+        
+
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+
+            isAppearanceLightStatusBars = (luminance > 0.5)
+
+        }
+
+    }
+
+
+
+    private fun parseRgb(rgb: String): Int {
+
+        val v = rgb.replace(Regex("[^0-9,]"), "").split(",")
+
+        return Color.rgb(v[0].toInt(), v[1].toInt(), v[2].toInt())
+
+    }
+
+
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+
         if (keyCode == KeyEvent.KEYCODE_BACK && webViewLive.canGoBack()) {
+
             webViewLive.goBack()
+
             return true
+
         }
+
         return super.onKeyDown(keyCode, event)
+
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        webViewLive.saveState(outState)
-    }
 }
+
