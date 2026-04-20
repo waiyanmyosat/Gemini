@@ -50,11 +50,13 @@ class MainActivity : AppCompatActivity() {
         val rootLayout = FrameLayout(this)
         setContentView(rootLayout)
 
+        // Fullscreen and system bar handling
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.hide(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
+        // Keyboard (IME) resize logic
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
             val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
             val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
@@ -96,7 +98,7 @@ class MainActivity : AppCompatActivity() {
         cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 runOnUiThread {
-                    if (webViewLive.url == null || webViewLive.url?.contains("google") == false) {
+                    if (webViewLive.url == null || !webViewLive.url!!.contains("google.com")) {
                         webViewLive.loadUrl("https://gemini.google.com/app")
                     } else {
                         webViewLive.reload()
@@ -132,11 +134,10 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
                 wv.visibility = View.VISIBLE
-            }
 
-            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) {
-                if (request?.isForMainFrame == true) {
-                    wv.visibility = View.INVISIBLE 
+                // AUTO-REDIRECT: If login ends on the Account page, go back to Gemini
+                if (url != null && (url.contains("myaccount.google.com") && !url.contains("SetOSID"))) {
+                    wv.loadUrl("https://gemini.google.com/app")
                 }
             }
 
@@ -144,13 +145,22 @@ class MainActivity : AppCompatActivity() {
                 val url = request?.url?.toString() ?: return false
                 val host = request.url.host?.lowercase() ?: ""
 
-                val isLogin = url.contains("ServiceLogin") || url.contains("accounts.google") || 
-                              url.contains("signin") || url.contains("checkpoint")
+                // Strict internal list to prevent the "SetOSID" flow from opening external browser
+                val internalDomains = listOf(
+                    "gemini.google.com",
+                    "accounts.google.com",
+                    "myaccount.google.com",
+                    "accounts.youtube.com",
+                    "google.com"
+                )
 
-                if (isLogin || host == "gemini.google.com") {
-                    return false 
+                val isInternal = internalDomains.any { host == it || host.endsWith(".$it") }
+
+                if (isInternal) {
+                    return false // Keep inside WebView
                 }
 
+                // Handle External Intents (Play Store, YouTube App, etc.)
                 try {
                     val intent = if (url.startsWith("intent://")) {
                         Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
@@ -160,12 +170,6 @@ class MainActivity : AppCompatActivity() {
                     
                     if (intent.resolveActivity(packageManager) != null) {
                         startActivity(intent)
-                        return true
-                    }
-                    
-                    val fallback = intent.getStringExtra("browser_fallback_url")
-                    if (fallback != null) {
-                        view?.loadUrl(fallback)
                         return true
                     }
                 } catch (e: Exception) {
@@ -188,4 +192,4 @@ class MainActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         webViewLive.saveState(outState)
     }
-}
+} 
