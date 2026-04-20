@@ -2,6 +2,7 @@ package com.gemini.ai
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -34,24 +35,26 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. Enable Edge-to-Edge and Transparent Status Bar
+        // 1. Transparent Edge-to-Edge Setup
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
 
-        // 2. Setup Native Root Layout (Acts as the status bar background)
         rootLayout = FrameLayout(this)
+        // Initial fallback color based on system
+        val isDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        rootLayout.setBackgroundColor(if (isDark) Color.BLACK else Color.WHITE)
         setContentView(rootLayout)
 
-        // 3. Initialize WebView
         webViewLive = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
+            // Make WebView transparent so rootLayout color shows through while loading
+            setBackgroundColor(Color.TRANSPARENT)
         }
         rootLayout.addView(webViewLive)
 
-        // 4. Initialize Progress Bar
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 12).apply {
                 gravity = Gravity.TOP
@@ -60,18 +63,16 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(progressBar)
 
-        // 5. Native Inset Handling (The "0ms Sync" Secret)
+        // 2. Native Inset Management (0ms Content Offset)
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
             val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             
-            // Push WebView content down natively so it never overlaps icons
             val webParams = webViewLive.layoutParams as FrameLayout.LayoutParams
             webParams.topMargin = statusBars.top
             webParams.bottomMargin = ime.bottom
             webViewLive.layoutParams = webParams
 
-            // Position progress bar exactly under status bar
             val progressParams = progressBar.layoutParams as FrameLayout.LayoutParams
             progressParams.topMargin = statusBars.top
             progressBar.layoutParams = progressParams
@@ -91,7 +92,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupWebView(wv: WebView) {
         GeminiWebViewManager.configureGeminiWebView(wv)
 
-        // 6. JavaScript Bridge for Real-time Color & Icon Contrast
+        // 3. Real-time Bridge (Crucial for "No Restart" Sync)
         wv.addJavascriptInterface(object {
             @JavascriptInterface
             fun onColorDetected(rgbStr: String) {
@@ -99,13 +100,7 @@ class MainActivity : AppCompatActivity() {
                     try {
                         val color = parseRgb(rgbStr)
                         updateSystemUI(color)
-                    } catch (e: Exception) {
-                        // Fallback: Check system theme if detection fails
-                        val isDark = (resources.configuration.uiMode and 
-                                     android.content.res.Configuration.UI_MODE_NIGHT_MASK) == 
-                                     android.content.res.Configuration.UI_MODE_NIGHT_YES
-                        updateSystemUI(if (isDark) Color.BLACK else Color.WHITE)
-                    }
+                    } catch (e: Exception) { }
                 }
             }
         }, "ColorBridge")
@@ -114,10 +109,9 @@ class MainActivity : AppCompatActivity() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 progressBar.progress = newProgress
                 progressBar.visibility = if (newProgress < 100) View.VISIBLE else View.GONE
-                // Early injection to get color as soon as DOM starts rendering
-                if (newProgress > 15) injectColorDetector(view)
+                // Inject early and often to catch theme changes
+                if (newProgress > 10) injectColorDetector(view)
             }
-
             override fun onShowFileChooser(view: WebView?, cb: ValueCallback<Array<Uri>>?, p: FileChooserParams?): Boolean {
                 filePathCallback = cb
                 filePickerLauncher.launch(p?.createIntent())
@@ -135,15 +129,16 @@ class MainActivity : AppCompatActivity() {
     private fun injectColorDetector(view: WebView?) {
         val script = """
             (function() {
+                var lastDetectedColor = "";
                 function sendColor() {
                     var bg = window.getComputedStyle(document.body).backgroundColor;
-                    // Ensure we don't send transparent/null backgrounds
-                    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+                    if (bg && bg !== lastDetectedColor && bg !== 'rgba(0, 0, 0, 0)') {
+                        lastDetectedColor = bg;
                         ColorBridge.onColorDetected(bg);
                     }
                 }
                 sendColor();
-                // Real-time Mutation Observer: Detects theme toggles without reload
+                // This observer watches for class changes on the HTML tag (Gemini's dark mode trigger)
                 new MutationObserver(sendColor).observe(document.documentElement, { 
                     attributes: true, 
                     attributeFilter: ['class', 'style', 'data-theme'] 
@@ -154,18 +149,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateSystemUI(bgColor: Int) {
-        // Match the native container background to the website instantly
+        // 4. Update Native Background (0ms sync)
         rootLayout.setBackgroundColor(bgColor)
-        webViewLive.setBackgroundColor(bgColor)
         
-        // Luminance Detection: Calculate if background is Light or Dark
+        // 5. Luminance Detection for Icon Visibility
         val r = Color.red(bgColor)
         val g = Color.green(bgColor)
         val b = Color.blue(bgColor)
         val luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
         
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        // If luminance > 0.5 (Light background), show DARK icons. Else show WHITE icons.
+        // If site is Light (high luminance), set Dark Icons. Else set White Icons.
         controller.isAppearanceLightStatusBars = (luminance > 0.5)
     }
 
