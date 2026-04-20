@@ -45,50 +45,44 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 1. Standard API to enable edge-to-edge display
-        enableEdgeToEdge()
+        enableEdgeToEdge() // Standard Edge-to-Edge API
         super.onCreate(savedInstanceState)
         
         val rootLayout = FrameLayout(this)
         setContentView(rootLayout)
 
-        // 2. Make status bar transparent so WebView background shows through
         window.statusBarColor = Color.TRANSPARENT
 
         webViewLive = WebView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, 
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             visibility = View.INVISIBLE 
         }
         rootLayout.addView(webViewLive)
 
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 12).apply { 
-                // Place progress bar just below the status bar area
-            }
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 12)
             max = 100
             visibility = View.GONE
         }
         rootLayout.addView(progressBar)
 
-        // 3. Handle System Insets (The "Standard" way)
+        // UI FIX: Use padding to keep content below battery icon, but background seamless
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
             val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
             val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
             val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
 
-            // Set progress bar top margin to match status bar height
+            // Progress bar stays right under status bar icons
             val progressParams = progressBar.layoutParams as FrameLayout.LayoutParams
             progressParams.topMargin = statusBars.top
             progressBar.layoutParams = progressParams
 
+            // WEBVIEW UI FIX: Padding keeps content safe, Margin 0 keeps color seamless
+            webViewLive.setPadding(0, statusBars.top, 0, 0)
+            
             val webParams = webViewLive.layoutParams as FrameLayout.LayoutParams
-            // To match your screenshot (no gap), we keep topMargin at 0
-            webParams.topMargin = 0
-            // Adjust bottom for keyboard or nav bar
+            webParams.topMargin = 0 
             webParams.bottomMargin = if (imeVisible) imeHeight else navBars.bottom
             webViewLive.layoutParams = webParams
 
@@ -151,7 +145,7 @@ class MainActivity : AppCompatActivity() {
                 CookieManager.getInstance().flush()
                 wv.visibility = View.VISIBLE
 
-                // Handle the "SetOSID" loop redirect
+                // Fix for the 'SetOSID' finish loop
                 if (url != null && (url.contains("myaccount.google.com") && !url.contains("SetOSID"))) {
                     wv.loadUrl("https://gemini.google.com/app")
                 }
@@ -161,24 +155,38 @@ class MainActivity : AppCompatActivity() {
                 val url = request?.url?.toString() ?: return false
                 val host = request.url.host?.lowercase() ?: ""
 
-                val internalDomains = listOf(
-                    "gemini.google.com",
-                    "accounts.google.com",
-                    "myaccount.google.com",
-                    "google.com"
-                )
+                // 1. DOMAIN CHECK: Keep Google Auth strictly inside
+                val isInternal = host.contains("google.com") || 
+                                 host.contains("gstatic.com") || 
+                                 host.contains("googleapis.com")
 
-                if (internalDomains.any { host == it || host.endsWith(".$it") }) {
-                    return false
+                if (isInternal) {
+                    return false // Let WebView handle it
                 }
 
+                // 2. INTENT & EXTERNAL REDIRECT: Everything else goes to specific apps
                 try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    val intent = if (url.startsWith("intent://")) {
+                        Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                    } else {
+                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    }
+
+                    // Try to find the specific app on the system
                     if (intent.resolveActivity(packageManager) != null) {
                         startActivity(intent)
                         return true
                     }
-                } catch (e: Exception) { /* No-op */ }
+                    
+                    // Fallback for intent links if app is missing
+                    val fallbackUrl = intent.getStringExtra("browser_fallback_url")
+                    if (fallbackUrl != null) {
+                        view?.loadUrl(fallbackUrl)
+                        return true
+                    }
+                } catch (e: Exception) {
+                    return false 
+                }
                 return false
             }
         }
