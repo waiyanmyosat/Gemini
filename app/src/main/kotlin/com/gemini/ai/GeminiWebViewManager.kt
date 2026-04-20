@@ -10,6 +10,7 @@ object GeminiWebViewManager {
 
     fun warmUp(context: Context) {
         try {
+            // Force Chromium engine initialization
             WebView(context).destroy()
         } catch (e: Exception) {}
     }
@@ -27,9 +28,13 @@ object GeminiWebViewManager {
             databaseEnabled = true
             allowFileAccess = true
             allowContentAccess = true
-            cacheMode = WebSettings.LOAD_DEFAULT 
+            cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            loadsImagesAutomatically = true
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            // Modern Pixel 8 Pro User Agent
             userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
-        }
+        } 
     }
-} 
+}
