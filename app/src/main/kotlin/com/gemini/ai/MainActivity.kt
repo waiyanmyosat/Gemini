@@ -1,11 +1,14 @@
 package com.gemini.ai
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.View
+import android.view.Gravity
 import android.webkit.*
 import android.widget.FrameLayout
 import android.widget.ProgressBar
@@ -37,6 +40,9 @@ class MainActivity : AppCompatActivity() {
         val rootLayout = FrameLayout(this)
         setContentView(rootLayout)
 
+        // Apply Status Bar Colors (Pure Black/White)
+        updateStatusBarColors()
+
         webViewLive = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, 
@@ -47,9 +53,9 @@ class MainActivity : AppCompatActivity() {
 
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 12).apply {
-                gravity = android.view.Gravity.TOP
+                gravity = Gravity.TOP
             }
-            visibility = android.view.View.GONE
+            visibility = View.GONE
         }
         rootLayout.addView(progressBar)
 
@@ -76,13 +82,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateStatusBarColors() {
+        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+        val isDarkMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
+        if (isDarkMode) {
+            // Pure Black background, White icons
+            window.statusBarColor = Color.BLACK
+            windowInsetsController.isAppearanceLightStatusBars = false
+        } else {
+            // Pure White background, Black icons
+            window.statusBarColor = Color.WHITE
+            windowInsetsController.isAppearanceLightStatusBars = true
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Ensure colors update if user toggles dark mode in settings while app is open
+        updateStatusBarColors()
+    }
+
     private fun setupWebView(wv: WebView) {
         GeminiWebViewManager.configureGeminiWebView(wv)
         
         wv.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 progressBar.progress = newProgress
-                progressBar.visibility = if (newProgress < 100) android.view.View.VISIBLE else android.view.View.GONE
+                progressBar.visibility = if (newProgress < 100) View.VISIBLE else View.GONE
             }
 
             override fun onShowFileChooser(view: WebView?, callback: ValueCallback<Array<Uri>>?, params: FileChooserParams?): Boolean {
@@ -98,8 +125,6 @@ class MainActivity : AppCompatActivity() {
                 val url = uri.toString()
                 val host = uri.host?.lowercase() ?: ""
 
-                // THE BROADER LOGIN FILTER
-                // This catches gemini, accounts, and the youtube/myaccount session handovers
                 val isInternal = host.contains("gemini.google.com") || 
                                  host.contains("accounts.google.com") ||
                                  host.contains("accounts.youtube.com") ||
@@ -107,9 +132,8 @@ class MainActivity : AppCompatActivity() {
                                  url.contains("SetSID")
 
                 return if (isInternal) {
-                    false // LOAD INTERNALLY (This fixes the logout/redirect loop)
+                    false 
                 } else {
-                    // EXTERNAL: Open actual links/sources in the browser
                     try {
                         val intent = Intent(Intent.ACTION_VIEW, uri)
                         startActivity(intent)
@@ -121,7 +145,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                // Critical for keeping the session active
                 CookieManager.getInstance().flush()
             }
         }
@@ -134,4 +157,4 @@ class MainActivity : AppCompatActivity() {
         }
         return super.onKeyDown(keyCode, event)
     }
-} 
+}
