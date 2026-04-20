@@ -1,12 +1,14 @@
 package com.gemini.ai
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
-import android.view.KeyEvent
 import android.webkit.*
 import android.widget.FrameLayout
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -21,6 +23,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // UI Setup: Edge-to-edge and Transparency
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
 
@@ -33,11 +36,26 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(webViewLive)
 
+        // 1. BACK BUTTON LOGIC: Handle internal history vs app exit
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (webViewLive.canGoBack()) {
+                    webViewLive.goBack()
+                } else {
+                    // Disable this callback so the next back press exits the app
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
+
+        // 2. KEYBOARD & STATUS BAR INSETS: Prevents UI overlapping
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
             val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
             webViewLive.layoutParams = (webViewLive.layoutParams as FrameLayout.LayoutParams).apply {
                 topMargin = statusBars.top
-                bottomMargin = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+                bottomMargin = imeBottom
             }
             insets
         }
@@ -56,13 +74,15 @@ class MainActivity : AppCompatActivity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
+            // Allow cookies for login persistence
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         }
 
+        // JS Bridge for Status Bar Color Sync
         wv.addJavascriptInterface(object {
             @JavascriptInterface
             fun onColorDetected(rgbStr: String) {
                 val newColor = parseRgb(rgbStr)
-                // Only bridge to UI thread if color actually changed
                 if (newColor != lastSyncedColor) {
                     lastSyncedColor = newColor
                     runOnUiThread { updateStatusBar(newColor) }
@@ -75,7 +95,32 @@ class MainActivity : AppCompatActivity() {
                 if (newProgress > 25) injectRealTimeListener(view)
             }
         }
+
+        // 3. URL HANDLING: Keep Google/Login inside, send Reddit/External out
         wv.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                val url = request?.url?.toString() ?: return false
+                
+                // Whitelist Google-owned domains to ensure Login and Gemini work
+                val isInternal = url.contains("google.com") || 
+                                 url.contains("gstatic.com") || 
+                                 url.contains("google.ac") ||
+                                 url.contains("youtube.com") // Required for SID login sync
+
+                return if (isInternal) {
+                    false // Stay in WebView
+                } else {
+                    // Open Reddit and other external links in default browser
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        startActivity(intent)
+                        true 
+                    } catch (e: Exception) {
+                        false // Fallback to WebView if browser is unavailable
+                    }
+                }
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 injectRealTimeListener(view)
             }
@@ -87,29 +132,19 @@ class MainActivity : AppCompatActivity() {
             (function() {
                 if (window.isListening) return;
                 window.isListening = true;
-
                 let lastSent = "";
                 window.syncColor = function() {
-                    // requestAnimationFrame is the gold standard for high-refresh displays
                     requestAnimationFrame(() => {
                         const bg = window.getComputedStyle(document.body).backgroundColor;
-                        if (bg && bg !== lastSent && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+                        if (bg && bg !== lastSent && bg !== 'transparent' && bg !== 'rgba(0,0,0,0)') {
                             lastSent = bg;
                             ColorBridge.onColorDetected(bg);
                         }
                     });
                 };
-
-                // Instant trigger on any DOM change
                 const observer = new MutationObserver(window.syncColor);
-                observer.observe(document.documentElement, { 
-                    attributes: true, 
-                    subtree: true, 
-                    childList: true 
-                });
-
-                // 8ms interval for 120Hz displays (High-speed fallback)
-                setInterval(window.syncColor, 8);
+                observer.observe(document.documentElement, { attributes: true, subtree: true, childList: true });
+                setInterval(window.syncColor, 100);
                 window.syncColor();
             })();
         """.trimIndent()
@@ -118,8 +153,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateStatusBar(bgColor: Int) {
         rootLayout.setBackgroundColor(bgColor)
-        
-        // Optimized Luminance check
         val r = Color.red(bgColor)
         val g = Color.green(bgColor)
         val b = Color.blue(bgColor)
@@ -137,13 +170,5 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Color.BLACK
         }
-    }
-
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && webViewLive.canGoBack()) {
-            webViewLive.goBack()
-            return true
-        }
-        return super.onKeyDown(keyCode, event)
     }
 }
